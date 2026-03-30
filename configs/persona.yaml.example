@@ -1,0 +1,24 @@
+# Your personal AI persona for Hermes Agent.
+#
+# Copy to configs/persona.yaml (gitignored) and fill it in:
+#   cp configs/persona.yaml.example configs/persona.yaml
+#
+# Hermes will use this to personalise its responses and behavior.
+# See: https://hermes-agent.nousresearch.com/docs/user-guide/personality
+
+name: "Your Name"
+role: "Your role or title (e.g. ML Engineer, Founder, Researcher)"
+expertise:
+  - "Area of expertise 1 (e.g. Large Language Models)"
+  - "Area of expertise 2 (e.g. Systems engineering)"
+interests:
+  - "Interest 1 (e.g. Local AI and privacy tech)"
+  - "Interest 2 (e.g. Open-source software)"
+watchlist:                    # Tickers for market summaries
+  - "NVDA"
+  - "TSLA"
+style: "concise, technical, first-principles"
+context: >
+  Add background context here — current projects, location, preferences.
+  Example: "I'm building an AI agent platform. Based in Bengaluru.
+  Prefer implementation-focused, data-driven answers."

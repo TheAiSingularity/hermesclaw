@@ -1,0 +1,66 @@
+# HermesClaw — OpenShell Sandbox Profile
+#
+# Defines the container, resource limits, inference routing, and mounts
+# for the HermesClaw sandbox.
+#
+# Register with:
+#   openshell profile register openshell/hermesclaw-profile.yaml
+#
+# Start the sandbox:
+#   openshell sandbox create --profile hermesclaw --name hermesclaw-1
+#
+# Reference: https://docs.nvidia.com/openshell/latest/reference/profile.html
+
+apiVersion: openshell/v1
+kind: SandboxProfile
+
+metadata:
+  name: hermesclaw
+  description: "Hermes Agent running inside NVIDIA OpenShell — world's first HermesClaw sandbox"
+
+# ── Container ────────────────────────────────────────────────────────────────
+container:
+  image: hermesclaw:latest       # Built from Dockerfile in this repo
+  command: ["hermes", "gateway"] # Starts Hermes gateway for Telegram/Signal/etc.
+
+# ── Policy reference ─────────────────────────────────────────────────────────
+policy: hermesclaw               # References hermesclaw-policy.yaml
+
+# ── Resources ────────────────────────────────────────────────────────────────
+resources:
+  cpu: "2"
+  memory: "2Gi"
+
+# ── Inference routing ────────────────────────────────────────────────────────
+# OpenShell intercepts calls to inference.local inside the container and
+# routes them to this endpoint on the host. This is the same mechanism
+# NemoClaw uses for OpenClaw.
+inference:
+  provider: local
+  endpoint: "http://127.0.0.1:8080/v1"   # llama.cpp on the host
+
+# ── Filesystem mounts ────────────────────────────────────────────────────────
+mounts:
+  # Hermes memories and skills — host path so they're accessible outside the sandbox
+  - hostPath: ~/.hermes
+    containerPath: /root/.hermes
+
+  # User's knowledge docs for RAG (read-only inside sandbox)
+  - hostPath: ./knowledge
+    containerPath: /sandbox/knowledge
+    readOnly: true
+
+  # User's persona config (read-only)
+  - hostPath: ./configs
+    containerPath: /sandbox/configs
+    readOnly: true
+
+# ── Environment variables ────────────────────────────────────────────────────
+env:
+  # Point Hermes at OpenShell's inference router instead of a direct URL.
+  # Inside the sandbox, all LLM calls go through inference.local which
+  # routes them to the host's llama.cpp via the inference.endpoint above.
+  - name: OPENAI_BASE_URL
+    value: "http://inference.local/v1"
+  - name: OPENAI_API_KEY
+    value: "not-needed"

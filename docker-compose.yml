@@ -1,0 +1,73 @@
+# HermesClaw — Hermes Agent + local llama.cpp inference
+#
+# QUICK START (Docker — no NVIDIA hardware required)
+# --------------------------------------------------
+# 1. Copy and fill in your secrets:
+#      cp .env.example .env
+#
+# 2. Download a model into models/:
+#      curl -L -o models/Qwen3.5-4B-Q4_K_M.gguf \
+#        "https://huggingface.co/Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF/resolve/main/Qwen3.5-4B.Q4_K_M.gguf"
+#
+# 3. Start everything:
+#      docker compose up
+#
+# 4. Test Hermes:
+#      docker exec -it hermesclaw hermes chat -q "hello"
+#
+# For OpenShell sandbox mode (NVIDIA hardware):
+#      ./scripts/setup.sh
+#      ./scripts/start.sh
+#
+# NOTE: In this docker-compose setup, Hermes reaches llama.cpp via the
+# Docker network (http://llama-server:8080/v1). When running under
+# OpenShell, inference calls go through inference.local (the OpenShell
+# inference router) — same result, different path.
+
+services:
+
+  # ── llama.cpp inference server ─────────────────────────────────────────────
+  llama-server:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    container_name: llama-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models:ro
+    command: >
+      -m /models/${MODEL_FILE:-Qwen3.5-4B-Q4_K_M.gguf}
+      --port 8080
+      --host 0.0.0.0
+      --ctx-size 8192
+      --n-gpu-layers ${N_GPU_LAYERS:-0}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ── Hermes Agent ────────────────────────────────────────────────────────────
+  hermesclaw:
+    build: .
+    container_name: hermesclaw
+    env_file: .env
+    environment:
+      # Docker path: use the compose service hostname
+      # OpenShell path: OPENAI_BASE_URL is set to http://inference.local/v1 via the profile
+      - OPENAI_BASE_URL=http://llama-server:8080/v1
+      - OPENAI_API_KEY=not-needed
+    volumes:
+      # Persist Hermes memories and skills across container restarts
+      - hermesclaw-memories:/root/.hermes
+      # Mount user's knowledge docs read-only into the sandbox
+      - ./knowledge:/sandbox/knowledge:ro
+      # Mount persona config if it exists
+      - ./configs:/sandbox/configs:ro
+    depends_on:
+      llama-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  hermesclaw-memories:

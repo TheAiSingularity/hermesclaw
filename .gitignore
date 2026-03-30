@@ -1,0 +1,28 @@
+# Environment
+.env
+
+# Model weights (large binary files)
+models/*.gguf
+models/*.bin
+models/*.safetensors
+
+# Hermes config with secrets
+configs/hermes.yaml
+configs/persona.yaml
+
+# Docker
+.docker/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

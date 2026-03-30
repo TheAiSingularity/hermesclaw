@@ -1,0 +1,29 @@
+# Hermes Agent config for HermesClaw.
+#
+# Copy to ~/.hermes/config.yaml:
+#   cp configs/hermes.yaml.example ~/.hermes/config.yaml
+#
+# When running under OpenShell:
+#   base_url points at inference.local (the OpenShell inference router)
+#   which intercepts and routes calls to your llama.cpp server on the host.
+#
+# When running under plain Docker (docker compose up):
+#   The OPENAI_BASE_URL env var overrides base_url automatically.
+#   Set in .env: OPENAI_BASE_URL=http://llama-server:8080/v1
+
+model:
+  default: local          # Model ID — must match what llama.cpp reports
+  provider: auto
+  base_url: http://inference.local   # OpenShell inference router (don't change for sandboxed mode)
+
+terminal:
+  backend: local          # Run code in the local container environment
+
+memory:
+  enabled: true
+  path: /root/.hermes/memories
+
+skills:
+  enabled: true
+  path: /root/.hermes/skills
+  auto_create: true       # Hermes creates skills from successful sessions (self-improvement)

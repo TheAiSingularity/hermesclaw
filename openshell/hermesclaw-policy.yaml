@@ -1,0 +1,100 @@
+# HermesClaw — OpenShell Sandbox Policy
+#
+# This policy controls what Hermes Agent is allowed to do inside the sandbox.
+# The OpenShell runtime enforces these rules at the kernel level using:
+#   - Landlock LSM  (filesystem isolation)
+#   - Network namespaces + iptables  (network egress control)
+#   - seccomp  (syscall filtering)
+#
+# Based on the same pattern used by NemoClaw for OpenClaw.
+#
+# Apply with:
+#   openshell policy apply openshell/hermesclaw-policy.yaml
+#
+# Reference: https://docs.nvidia.com/openshell/latest/reference/policy.html
+
+apiVersion: openshell/v1
+kind: SandboxPolicy
+
+metadata:
+  name: hermesclaw
+  description: "OpenShell policy for Hermes Agent — allows inference, blocks all other egress"
+
+# ── Network ─────────────────────────────────────────────────────────────────
+network:
+  egress:
+    # Allow LLM inference calls to OpenShell's inference router.
+    # OpenShell intercepts calls to inference.local and routes them to
+    # the configured inference endpoint (llama.cpp on the host).
+    - host: inference.local
+      port: 80
+      protocol: tcp
+    - host: inference.local
+      port: 443
+      protocol: tcp
+
+    # Optional: allow Hermes to download skills from GitHub.
+    # Uncomment to enable Hermes self-improvement and skill creation.
+    # Leave commented for maximum security (no outbound internet).
+    #
+    # - host: github.com
+    #   port: 443
+    #   protocol: tcp
+    # - host: raw.githubusercontent.com
+    #   port: 443
+    #   protocol: tcp
+    # - host: api.github.com
+    #   port: 443
+    #   protocol: tcp
+
+  # Block all other outbound traffic by default.
+  # Hermes cannot phone home, exfiltrate data, or make arbitrary HTTP calls.
+  ingress:
+    - deny: all
+  default: deny
+
+# ── Filesystem ───────────────────────────────────────────────────────────────
+filesystem:
+  allow:
+    # Hermes memories, skills, and config — must be writable
+    - path: /root/.hermes
+      permissions: [read, write, execute]
+
+    # Agent working directory — where Hermes creates and runs files
+    - path: /sandbox
+      permissions: [read, write, execute]
+
+    # Temporary files
+    - path: /tmp
+      permissions: [read, write, execute]
+
+    # Read-only system paths needed for Python/Hermes to run
+    - path: /usr
+      permissions: [read, execute]
+    - path: /lib
+      permissions: [read, execute]
+    - path: /lib64
+      permissions: [read, execute]
+    - path: /bin
+      permissions: [read, execute]
+
+  # Deny everything not explicitly allowed.
+  # The host filesystem, credentials, and other processes are invisible.
+  default: deny
+
+# ── Syscalls (seccomp) ────────────────────────────────────────────────────────
+syscalls:
+  # Block dangerous syscalls that could be used to escape the sandbox
+  # or spy on other processes. These are the same syscalls blocked by
+  # NemoClaw for OpenClaw.
+  deny:
+    - ptrace           # Cannot inspect other processes
+    - mount            # Cannot mount filesystems
+    - umount2          # Cannot unmount filesystems
+    - kexec_load       # Cannot load a new kernel
+    - perf_event_open  # Cannot access kernel performance counters
+    - process_vm_readv  # Cannot read another process's memory
+    - process_vm_writev # Cannot write to another process's memory
+
+  # Allow all other syscalls — Hermes needs standard POSIX syscalls to run.
+  default: allow
