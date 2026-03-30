@@ -1,4 +1,6 @@
-# HermesClaw
+<p align="center">
+  <img src="assets/banner.png" alt="HermesClaw" width="100%">
+</p>
 
 **The world's first Hermes Agent sandboxed by NVIDIA OpenShell.**
 
