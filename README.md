@@ -2,7 +2,7 @@
   <img src="assets/banner.png" alt="HermesClaw" width="100%">
 </p>
 
-** Hermes Agent sandboxed by NVIDIA OpenShell.**
+**Hermes Agent sandboxed by NVIDIA OpenShell.**
 
 NVIDIA built OpenShell to hardware-enforce AI agent behavior — blocking network egress, filesystem writes, and dangerous syscalls at the kernel level. They demonstrated it with Claude Code, Codex, and Cursor. They used it to build NemoClaw (OpenClaw + OpenShell). **Nobody had done it for Hermes Agent — until now.**
 
