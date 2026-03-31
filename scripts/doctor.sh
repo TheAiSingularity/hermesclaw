@@ -31,8 +31,8 @@ record() {
     local name="$2"
     local detail="${3:-}"
     RESULTS+=("$status|$name|$detail")
-    [[ "$status" == "FAIL" ]] && (( FAILURES++ )) || true
-    [[ "$status" == "WARN" ]] && (( WARNINGS++ )) || true
+    if [[ "$status" == "FAIL" ]]; then (( FAILURES++ )); fi
+    if [[ "$status" == "WARN" ]]; then (( WARNINGS++ )); fi
 }
 
 print_results() {
