@@ -13,6 +13,51 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — Unreleased
+
+### Added
+- **`docs/use-cases/`** — Seven end-to-end deployment guides, one per persona:
+  - `01-researcher/` — Docker + Telegram gateway + weekly arXiv digest cron
+  - `02-developer/` — Docker + VS Code ACP integration + Git MCP
+  - `03-home-automation/` — Docker + Home Assistant MCP + Telegram bot
+  - `04-data-analyst/` — Docker + Postgres MCP + daily anomaly detection
+  - `05-small-business/` — Docker + gateway policy + Slack support bot
+  - `06-privacy-regulated/` — OpenShell sandbox + strict policy (HIPAA/legal/compliance)
+  - `07-trader/` — Docker + Qwen-7B + Telegram market alerts
+  - `README.md` — Index with quick-picker table + NemoClaw compatibility matrix across all 7 use cases
+- **`skills/`** — Pre-built Hermes skills library (native SKILL.md format, installable in one command):
+  - `research-digest/` — Weekly arXiv + web paper digest to Telegram
+  - `code-review/` — Local code review using project conventions from memory
+  - `home-assistant/` — Natural language smart home control via HA MCP
+  - `anomaly-detection/` — Daily Postgres metric monitoring; flags > 2σ deviations
+  - `slack-support/` — Slack support bot with knowledge base and escalation routing
+  - `market-alerts/` — Watchlist threshold monitoring with Telegram alerts
+- **`skills/install.sh`** — Interactive installer; copies skills to `~/.hermes/skills/`
+- **`skills/anomaly-detection/scripts/detect.py`** — Z-score anomaly computation helper (stdlib only)
+- **`skills/market-alerts/scripts/monitor.py`** — Price threshold comparison helper (stdlib only)
+- **`README.md`** — Added "Use Cases" and "Skills Library" sections with install commands
+
+### Changed (v0.4.0)
+- **NemoClaw comparison tables corrected** across all 7 use-case guides and README:
+  - Provider support: NemoClaw supports OpenAI, Anthropic, Gemini, NVIDIA NIM (not Nemotron-only)
+  - Tool count: OpenClaw (the agent NemoClaw wraps) has 25+ tools and messaging channels (not ~10)
+  - Telegram/Slack/Discord: NemoClaw/OpenClaw has native gateway support — corrected from "❌" to "✅"
+  - macOS local inference: NemoClaw has a confirmed DNS bug (issue #260) breaking local models on macOS — added as explicit caveat
+  - HermesClaw advantages clarified: persistent MEMORY.md/USER.md, self-improving skills (DSPy+GEPA), MCP server support, local inference on macOS
+
+### Added (Phase 1 — sequential comparison test infrastructure)
+- **`scripts/test-setup.sh`** — Environment verification: Docker check, model file copy, HermesClaw build/start, NemoClaw CLI check, port conflict detection, `docs/test-results-uc.md` template creation
+- **`scripts/test-uc-01.sh`** — Researcher use case test: memory write/recall, Telegram (manual), cron creation, research-digest skill — both HermesClaw and NemoClaw
+- **`scripts/test-uc-02.sh`** — Developer use case test: code review (SQL injection + division-by-zero detection), ACP server startup, VS Code connection (manual), code-review skill
+- **`scripts/test-uc-03.sh`** — Home automation test: HA MCP connection, natural language command, routine creation — gracefully skips if no HA instance reachable
+- **`scripts/test-uc-04.sh`** — Data analyst test: spins up Docker Postgres, seeds anomaly data, tests Postgres MCP, SQL queries, anomaly-detection skill, detect.py z-scores
+- **`scripts/test-uc-05.sh`** — Small business test: FAQ responses, escalation trigger, knowledge base loading, slack-support skill, Slack bot (manual)
+- **`scripts/test-uc-06.sh`** — Privacy-regulated test: document analysis, local inference confirmation, outbound blocking (Linux/OpenShell only), NemoClaw cloud routing documented as HIPAA-disqualifying
+- **`scripts/test-uc-07.sh`** — Trader test: watchlist memory, threshold checks, market-alerts skill, monitor.py, Telegram alerts (manual), **inference latency measurement** (3-run average, HermesClaw vs NemoClaw cloud)
+- All test scripts write results to `docs/test-results-uc.md` (created by test-setup.sh)
+
+---
+
 ## [0.3.0] — Unreleased
 
 ### Fixed

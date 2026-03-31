@@ -48,7 +48,7 @@ OpenShell intercepts every call to `inference.local` inside the sandbox and rout
 
 ### Path 1 — Docker (no NVIDIA hardware required)
 
-Full Hermes + llama.cpp in one command. No sandbox, but all Hermes features work.
+Full Hermes + llama.cpp. No sandbox, but all Hermes features work.
 
 ```bash
 git clone https://github.com/TheAiSingularity/hermesclaw
@@ -56,11 +56,20 @@ cd hermesclaw
 
 cp .env.example .env          # set MODEL_FILE and optionally bot tokens
 # drop your .gguf model into models/
+# e.g. curl -L -o models/Qwen3-4B.gguf <huggingface-url>
 
 ./scripts/setup.sh            # build image, create ~/.hermes/config.yaml
 
-docker compose up             # start everything
-docker compose --profile gpu up  # GPU variant (requires NVIDIA Container Toolkit)
+# Start llama-server on your HOST machine first (Hermes connects to it via host.docker.internal)
+# macOS:
+brew install llama.cpp
+llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 --log-disable
+
+# Linux (see https://github.com/ggerganov/llama.cpp#build for build instructions):
+# llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99
+
+# Then start the Hermes container:
+docker compose up
 ```
 
 Test Hermes inside the container:
@@ -121,6 +130,48 @@ Switch security posture **without restarting** the sandbox:
 | `strict` | ✅ | ❌ | ❌ | ❌ |
 | `gateway` | ✅ | ✅ | ❌ | ❌ |
 | `permissive` | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+## Use Cases
+
+Seven end-to-end guides for real deployment scenarios — each with prerequisites, step-by-step setup, verification, and a NemoClaw comparison:
+
+| Who you are | Stack | Guide |
+|-------------|-------|-------|
+| Researcher / writer | Docker + Telegram + weekly arXiv digest | [docs/use-cases/01-researcher/](docs/use-cases/01-researcher/) |
+| Developer | Docker + VS Code ACP integration | [docs/use-cases/02-developer/](docs/use-cases/02-developer/) |
+| Home automation | Docker + Home Assistant MCP + Telegram | [docs/use-cases/03-home-automation/](docs/use-cases/03-home-automation/) |
+| Data analyst | Docker + Postgres MCP + anomaly alerts | [docs/use-cases/04-data-analyst/](docs/use-cases/04-data-analyst/) |
+| Small business | Docker + Slack support bot | [docs/use-cases/05-small-business/](docs/use-cases/05-small-business/) |
+| Privacy-regulated industry | OpenShell sandbox + strict policy | [docs/use-cases/06-privacy-regulated/](docs/use-cases/06-privacy-regulated/) |
+| Trader / quant | Docker + Qwen-7B + Telegram alerts | [docs/use-cases/07-trader/](docs/use-cases/07-trader/) |
+
+Full index and NemoClaw compatibility table: [docs/use-cases/README.md](docs/use-cases/)
+
+---
+
+## Skills Library
+
+Pre-built Hermes skills that encode recurring workflows. Install one command and tell Hermes to run it:
+
+```bash
+./skills/install.sh research-digest     # weekly arXiv digest → Telegram
+./skills/install.sh code-review         # local code review (CLI or VS Code ACP)
+./skills/install.sh home-assistant      # natural language smart home control
+./skills/install.sh anomaly-detection   # daily DB anomaly detection → Slack/Telegram
+./skills/install.sh slack-support       # Slack support bot with knowledge base
+./skills/install.sh market-alerts       # watchlist price alerts → Telegram
+./skills/install.sh --all               # install everything
+```
+
+After installing, invoke from anywhere:
+```bash
+hermesclaw chat "run research-digest"
+# or in Telegram/Slack: "run the anomaly-detection skill"
+```
+
+Skills index and usage: [skills/README.md](skills/)
 
 ---
 
@@ -205,7 +256,7 @@ What happens inside the sandbox:
 3. After 5+ tool calls it auto-creates a skill (`research_synthesis`) with DSPy + GEPA optimisation
 4. Next session: Hermes loads its memory and the new skill, and builds on prior research
 
-**This is not possible with NemoClaw / OpenClaw:** OpenClaw has no persistent memory, no skill creation, and NemoClaw only supports Nemotron models.
+**Not possible with NemoClaw / OpenClaw:** OpenClaw does not have Hermes-style persistent MEMORY.md / USER.md or self-improving skills via DSPy + GEPA. NemoClaw supports multiple inference providers (OpenAI, Anthropic, NVIDIA NIM), but cross-session memory that builds a user model over months is specific to Hermes.
 
 ---
 
@@ -233,7 +284,7 @@ hermesclaw policy-set permissive   # unlocks DuckDuckGo + GitHub skills
 hermesclaw policy-set gateway      # locks back down — no restart required
 ```
 
-**This is not possible with NemoClaw / OpenClaw:** NemoClaw has no messaging gateway. It runs Linux only and requires NVIDIA hardware. HermesClaw's Docker mode works on any machine including macOS.
+**Where HermesClaw wins here:** NemoClaw (via OpenClaw) does support Telegram and Discord, but routes inference to cloud APIs on macOS — your voice notes and messages pass through an external provider. HermesClaw keeps all inference local: the model runs on your hardware, nothing leaves your network.
 
 ---
 
@@ -245,19 +296,19 @@ Full comparison table and test results: [docs/test-results.md](docs/test-results
 
 | | HermesClaw | NemoClaw |
 |---|---|---|
-| **Agent** | Hermes (NousResearch) | OpenClaw (NVIDIA) |
-| **Sandbox** | OpenShell | OpenShell |
-| **Tools** | 40+ (web, browser, vision, voice, RL, …) | ~10 |
-| **Memory** | Persistent MEMORY.md + USER.md | None |
+| **Agent** | Hermes (NousResearch) | OpenClaw (wrapped by NemoClaw) |
+| **Sandbox** | OpenShell (optional) | OpenShell |
+| **Tools** | 40+ (web, browser, vision, voice, RL, …) | 25+ via OpenClaw (browser, shell, voice, camera, Live Canvas) |
+| **Memory** | Persistent MEMORY.md + USER.md | Session memory only — no cross-session persistence |
 | **Self-improving skills** | Yes (DSPy + GEPA) | No |
-| **Messaging gateway** | Telegram, Discord, Signal, Slack, WhatsApp, Email | None |
-| **Voice** | Push-to-talk + voice notes on all platforms | No |
+| **Messaging gateway** | Telegram, Discord, Signal, Slack, WhatsApp, Email | Telegram, Discord, Slack, WhatsApp, Signal, Google Chat, Teams (via OpenClaw) |
+| **Voice** | Push-to-talk + voice notes on all platforms | Yes — wake words + continuous voice (via OpenClaw) |
 | **Python SDK** | Yes (`from run_agent import AIAgent`) | No |
-| **MCP servers** | Yes | No |
-| **IDE integration** | VS Code, JetBrains, Zed (ACP) | No |
-| **Inference providers** | Local llama.cpp, NVIDIA, OpenAI, Anthropic, Ollama, vLLM | Nemotron via NVIDIA API only |
-| **macOS support** | Yes (Docker mode) | No (Linux required) |
-| **Without NVIDIA GPU** | Yes (CPU Docker mode) | No (NVIDIA hardware required) |
+| **MCP servers** | Yes | No (unconfirmed) |
+| **IDE integration** | VS Code, JetBrains, Zed (ACP) | OpenClaw-native integration (not ACP standard) |
+| **Inference providers** | Local llama.cpp, NVIDIA NIM, OpenAI, Anthropic, Ollama, vLLM | OpenAI, Anthropic, Google Gemini, NVIDIA NIM, local Nemotron (Linux only — broken on macOS, issue #260) |
+| **macOS support** | Yes — Docker mode + local inference | Yes — sandbox + cloud inference (local model broken, issue #260) |
+| **Without NVIDIA GPU** | Yes (CPU Docker mode) | Yes — with cloud inference (OpenAI/Anthropic/NVIDIA NIM) |
 | **Status** | Community implementation | NVIDIA official (alpha) |
 
 ---

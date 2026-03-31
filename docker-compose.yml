@@ -2,93 +2,47 @@
 #
 # QUICK START (Docker — no NVIDIA hardware required)
 # --------------------------------------------------
-# 1. Copy and fill in your secrets:
+# 1. Copy and fill in your settings:
 #      cp .env.example .env
+#      # Edit .env: set MODEL_FILE=your-model-name.gguf
 #
 # 2. Download a model into models/:
-#      curl -L -o models/Qwen3-4B-Q4_K_M.gguf <model-url>
+#      curl -L -o models/your-model.gguf <huggingface-url>
 #
-# 3. Start everything:
+# 3. Start llama-server on your HOST machine FIRST:
+#    (Hermes connects to it via host.docker.internal:8080)
+#
+#    macOS:
+#      brew install llama.cpp
+#      llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 --log-disable
+#
+#    Linux (build: https://github.com/ggerganov/llama.cpp#build):
+#      llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99
+#
+#    NOTE: --ctx-size 32768 is required. Hermes system prompt alone is ~11k tokens;
+#          values below 32768 cause "context length exceeded" on every query.
+#
+# 4. Start the Hermes container:
 #      docker compose up
 #
-#    Or with GPU (NVIDIA Container Toolkit required):
-#      docker compose --profile gpu up
-#
-# 4. Test Hermes:
+# 5. Test Hermes:
 #      docker exec -it hermesclaw hermes chat -q "hello"
 #      docker exec -it hermesclaw hermes status
 #
 # For OpenShell sandbox mode (NVIDIA hardware):
 #      ./scripts/setup.sh
 #      hermesclaw start
-#
-# NOTE: In Docker mode, Hermes reaches llama.cpp via the Docker network
-# (http://llama-server:8080/v1). When running under OpenShell, inference
-# calls go through inference.local (the OpenShell privacy router).
 
 services:
 
-  # ── llama.cpp inference server ─────────────────────────────────────────────
-  # CPU-only mode (default) — works everywhere, no NVIDIA hardware needed
-  llama-server:
-    image: ghcr.io/ggerganov/llama.cpp:server
-    container_name: llama-server-cpu
-    profiles: ["default", ""]
-    ports:
-      - "${LLAMA_PORT:-8080}:8080"
-    volumes:
-      - ./models:/models:ro
-    command: >
-      -m /models/${MODEL_FILE:-Qwen3-4B-Q4_K_M.gguf}
-      --port 8080
-      --host 0.0.0.0
-      --ctx-size ${CTX_SIZE:-8192}
-      --n-gpu-layers 0
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  # ── llama.cpp inference server (GPU variant) ─────────────────────────────────
-  # NVIDIA GPU mode — requires NVIDIA Container Toolkit
-  # Activate: docker compose --profile gpu up
-  #
-  # NOTE: This and the CPU variant share the same service name "llama-server"
-  # (used by the hermesclaw service via Docker DNS) but have distinct container
-  # names so they cannot run simultaneously. The profiles are mutually exclusive.
-  llama-server-gpu:
-    image: ghcr.io/ggerganov/llama.cpp:server-cuda
-    container_name: llama-server-gpu
-    profiles: ["gpu"]
-    ports:
-      - "${LLAMA_PORT:-8080}:8080"
-    volumes:
-      - ./models:/models:ro
-    command: >
-      -m /models/${MODEL_FILE:-Qwen3-4B-Q4_K_M.gguf}
-      --port 8080
-      --host 0.0.0.0
-      --ctx-size ${CTX_SIZE:-8192}
-      --n-gpu-layers ${N_GPU_LAYERS:-99}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-
   # ── Hermes Agent ────────────────────────────────────────────────────────────
+  # llama-server runs on the HOST via Homebrew (llama-server binary).
+  # On macOS, running llama.cpp natively is faster (Apple Metal GPU) than
+  # running it inside Docker (emulated ARM). The container reaches it via
+  # host.docker.internal which resolves to the host on Docker Desktop for Mac.
+  #
+  # Start llama-server before docker compose up:
+  #   llama-server -m models/<model>.gguf --port 8080 --host 127.0.0.1
   hermesclaw:
     build:
       context: .
@@ -98,10 +52,14 @@ services:
       - path: .env
         required: false         # Start even without a .env file
     environment:
-      # Inference: Docker uses the compose network hostname.
+      # Inference: host llama-server reachable from Docker via host.docker.internal
       # OpenShell: OPENAI_BASE_URL is overridden to http://inference.local/v1
-      OPENAI_BASE_URL: "http://llama-server:8080/v1"
-      OPENAI_API_KEY: "not-needed"
+      # Local llama.cpp server running on the host (via Homebrew)
+      OPENAI_BASE_URL: "http://host.docker.internal:${LLAMA_PORT:-8080}/v1"
+      # Do NOT set OPENAI_API_KEY here — hermes treats it as an OpenRouter key
+      # and routes to cloud. Local inference uses the config.yaml provider=llamacpp.
+      OPENAI_API_KEY: ""
+      OPENROUTER_API_KEY: ""
       HERMES_HOME: "/root/.hermes"
       # Gateway tokens (override in .env)
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
@@ -124,9 +82,6 @@ services:
     ports:
       # Expose gateway webhook port (for Telegram webhook mode)
       - "${HERMESCLAW_PORT:-8090}:8090"
-    depends_on:
-      llama-server:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "hermes", "status"]
