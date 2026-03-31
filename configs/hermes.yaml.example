@@ -4,26 +4,157 @@
 #   cp configs/hermes.yaml.example ~/.hermes/config.yaml
 #
 # When running under OpenShell:
-#   base_url points at inference.local (the OpenShell inference router)
-#   which intercepts and routes calls to your llama.cpp server on the host.
+#   base_url points at inference.local (the OpenShell privacy router)
+#   which intercepts LLM calls, strips agent credentials, and routes to
+#   the configured backend (llama.cpp on host, NVIDIA API, OpenAI, etc.).
 #
-# When running under plain Docker (docker compose up):
+# When running under Docker (docker compose up):
 #   The OPENAI_BASE_URL env var overrides base_url automatically.
 #   Set in .env: OPENAI_BASE_URL=http://llama-server:8080/v1
+#
+# Full config reference: https://hermes-agent.nousresearch.com/docs/user-guide/configuration/
 
+# ── Model / Inference ─────────────────────────────────────────────────────────
 model:
-  default: local          # Model ID — must match what llama.cpp reports
-  provider: auto
-  base_url: http://inference.local   # OpenShell inference router (don't change for sandboxed mode)
+  default: local        # Model ID shown by llama.cpp /v1/models, or provider model name
+  provider: auto        # auto | nous | openrouter | openai | anthropic | local
 
+  # OpenShell path: inference.local is intercepted by OpenShell's privacy router
+  # Docker path: OPENAI_BASE_URL env var overrides this automatically
+  base_url: http://inference.local
+
+  # Auxiliary models for specific tasks (optional — falls back to main model)
+  # Each can use a different provider/model for cost/quality optimization.
+  # vision_model: anthropic/claude-sonnet-4-6   # For image analysis
+  # memory_model: openai/gpt-4o-mini            # For memory compression (cheap)
+  # compression_model: openai/gpt-4o-mini       # For context compression
+
+# ── Terminal backend ──────────────────────────────────────────────────────────
+# local   — runs commands directly in the container (default for HermesClaw)
+# docker  — nested Docker (requires Docker socket mount)
+# ssh     — remote execution
 terminal:
-  backend: local          # Run code in the local container environment
+  backend: local
+  timeout: 60           # seconds before a command times out
 
+# ── Agent behavior ────────────────────────────────────────────────────────────
+agent:
+  max_turns: 90         # Max tool-calling iterations per session
+  reasoning: medium     # low | medium | high — effort level (affects token usage)
+
+  # Dangerous command approval: manual | smart | off
+  # smart: uses auxiliary LLM to assess risk, auto-approves safe commands
+  # manual: always prompt the user (good for gateway mode where you're not watching)
+  approval_mode: smart
+
+  # Custom personalities (switch with /personality during a session)
+  personalities:
+    focused:
+      description: "Fast, implementation-focused answers"
+      system_prompt: "Be concise. Skip preamble. Give working code."
+      tone: direct
+      style: technical
+    researcher:
+      description: "Deep research with citations"
+      system_prompt: "Explore thoroughly. Cite sources. Show reasoning."
+      tone: analytical
+      style: academic
+
+# ── Memory ────────────────────────────────────────────────────────────────────
+# Hermes maintains two memory files:
+#   MEMORY.md (~800 tokens) — environment facts, conventions, lessons learned
+#   USER.md   (~500 tokens) — user profile, preferences, communication style
 memory:
   enabled: true
-  path: /root/.hermes/memories
+  path: /root/.hermes/memories     # Inside the container
 
+  # Honcho integration: async memory writes + dialectic user modeling
+  # honcho:
+  #   enabled: true
+  #   recall_mode: hybrid           # exact | semantic | hybrid
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+# Hermes creates skills from successful sessions (self-improvement via DSPy + GEPA).
+# Skills are stored in ~/.hermes/skills/ and loaded on demand.
 skills:
   enabled: true
-  path: /root/.hermes/skills
-  auto_create: true       # Hermes creates skills from successful sessions (self-improvement)
+  path: /root/.hermes/skills       # Inside the container
+  auto_create: true                # Create skills after complex tasks (5+ tool calls)
+
+  # External skill directories (scanned in addition to path above)
+  # external_dirs:
+  #   - /sandbox/knowledge/skills  # Team-shared skills
+
+# ── Gateway (messaging integrations) ─────────────────────────────────────────
+# Hermes gateway listens for messages from Telegram, Discord, Signal, Slack, etc.
+# Tokens/credentials are stored in ~/.hermes/.env (not this file).
+# Configure with: hermes gateway (interactive setup)
+gateway:
+  # Platforms enabled when running: hermes gateway
+  # Tokens are read from ~/.hermes/.env or environment variables
+  telegram:
+    enabled: false               # Set to true after: hermes gateway → Telegram setup
+    # bot_token: from env TELEGRAM_BOT_TOKEN
+    # allowed_users: []          # List of Telegram user IDs; empty = allow all
+    # webhook_mode: false        # true for production (requires public URL)
+
+  discord:
+    enabled: false
+    # bot_token: from env DISCORD_BOT_TOKEN
+    # allowed_users: []
+
+  slack:
+    enabled: false
+    # bot_token: from env SLACK_BOT_TOKEN
+
+  # signal requires a running signal-cli HTTP bridge
+  # signal:
+  #   enabled: false
+  #   bridge_url: http://localhost:8090
+
+  # email requires IMAP/SMTP credentials
+  # email:
+  #   enabled: false
+  #   imap_server: imap.gmail.com
+  #   smtp_server: smtp.gmail.com
+  #   poll_interval: 60          # seconds
+
+# ── Toolsets ──────────────────────────────────────────────────────────────────
+# "all" enables every available tool. Restrict for security or cost.
+# Per-platform config: tools.telegram overrides for Telegram gateway sessions.
+tools:
+  enabled: all
+  # Restrict specific platforms:
+  # telegram:
+  #   enabled: [web, terminal, file, memory, skills, todo, cronjob]
+  # cli:
+  #   enabled: all
+
+# ── MCP servers ───────────────────────────────────────────────────────────────
+# Model Context Protocol — connect to external tool servers.
+# mcp:
+#   servers:
+#     filesystem:
+#       command: npx
+#       args: ["-y", "@modelcontextprotocol/server-filesystem", "/sandbox"]
+#       timeout: 30
+#     custom-api:
+#       url: http://localhost:9000/mcp
+#       headers:
+#         Authorization: "Bearer ${MCP_TOKEN}"
+
+# ── Session management ────────────────────────────────────────────────────────
+sessions:
+  # Compress context when it fills to this % of the model's context window
+  compression:
+    enabled: true
+    threshold: 0.75              # Compress when context reaches 75% full
+
+  # Full-text search over all past sessions (FTS5-backed SQLite)
+  search:
+    enabled: true
+
+# ── Display ───────────────────────────────────────────────────────────────────
+display:
+  skin: default                  # default | minimal | rich
+  status_bar: true               # Show token count and model in status bar

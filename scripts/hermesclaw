@@ -1,0 +1,508 @@
+#!/usr/bin/env bash
+# hermesclaw — CLI for managing HermesClaw sandboxes
+#
+# Usage:
+#   hermesclaw help
+#   hermesclaw onboard
+#   hermesclaw start [--gpu] [--policy PRESET]
+#   hermesclaw stop
+#   hermesclaw status
+#   hermesclaw connect
+#   hermesclaw logs [--follow]
+#   hermesclaw policy-list
+#   hermesclaw policy-set PRESET
+#   hermesclaw doctor
+#   hermesclaw chat "your prompt"
+#   hermesclaw version
+#   hermesclaw uninstall
+#
+# Policy presets:
+#   strict      — inference only (most secure)
+#   gateway     — inference + Telegram/Discord
+#   permissive  — everything: inference + gateway + web + skills
+#
+# Run ./scripts/setup.sh first to build the container image and register the sandbox.
+
+set -euo pipefail
+
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+SANDBOX_NAME="${HERMESCLAW_SANDBOX:-hermesclaw-1}"
+POLICY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../openshell" && pwd)"
+VERSION="0.1.0"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+_has() { command -v "$1" &>/dev/null; }
+
+_require_openshell() {
+    if ! _has openshell; then
+        echo -e "${RED}OpenShell is not installed.${RESET}"
+        echo "  Install: curl -fsSL https://www.nvidia.com/openshell.sh | bash"
+        echo "  Or use Docker mode: docker compose up"
+        exit 1
+    fi
+}
+
+_require_docker() {
+    if ! _has docker; then
+        echo -e "${RED}Docker is not installed.${RESET}"
+        echo "  Install: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+}
+
+_sandbox_running() {
+    openshell sandbox list 2>/dev/null | grep -q "$SANDBOX_NAME"
+}
+
+_llama_healthy() {
+    curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1
+}
+
+_policy_file() {
+    local preset="${1:-strict}"
+    case "$preset" in
+        strict)      echo "$POLICY_DIR/policy-strict.yaml" ;;
+        gateway)     echo "$POLICY_DIR/policy-gateway.yaml" ;;
+        permissive)  echo "$POLICY_DIR/policy-permissive.yaml" ;;
+        default)     echo "$POLICY_DIR/hermesclaw-policy.yaml" ;;
+        *)
+            echo -e "${RED}Unknown policy preset: $preset${RESET}" >&2
+            echo "Available presets: strict, gateway, permissive, default" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+cmd_help() {
+    echo ""
+    echo -e "${BOLD}hermesclaw${RESET} — Hermes Agent in NVIDIA OpenShell"
+    echo ""
+    echo -e "${BOLD}COMMANDS${RESET}"
+    echo "  onboard              First-time setup guide"
+    echo "  start [--gpu] [--policy PRESET]"
+    echo "                       Start HermesClaw sandbox"
+    echo "  stop                 Stop and remove the sandbox (state preserved)"
+    echo "  status               Show sandbox health and inference config"
+    echo "  connect              Open an interactive shell inside the sandbox"
+    echo "  logs [--follow]      View sandbox logs"
+    echo "  policy-list          List available policy presets"
+    echo "  policy-set PRESET    Hot-swap policy on the running sandbox"
+    echo "  doctor               Run end-to-end diagnostics"
+    echo "  chat \"PROMPT\"        Send one-shot message to Hermes"
+    echo "  version              Print version"
+    echo "  uninstall            Remove HermesClaw"
+    echo ""
+    echo -e "${BOLD}POLICY PRESETS${RESET}"
+    echo "  strict     Inference only — most secure"
+    echo "  gateway    Inference + Telegram/Discord messaging"
+    echo "  permissive Inference + gateway + web search + skills"
+    echo ""
+    echo -e "${BOLD}ENVIRONMENT${RESET}"
+    echo "  HERMESCLAW_SANDBOX   Sandbox name (default: hermesclaw-1)"
+    echo ""
+    echo -e "${DIM}For full docs: https://github.com/TheAiSingularity/hermesclaw${RESET}"
+    echo ""
+}
+
+cmd_onboard() {
+    echo ""
+    echo -e "${BOLD}HermesClaw Onboarding${RESET}"
+    echo "=============================="
+    echo ""
+
+    # Step 1: Docker
+    if _has docker; then
+        echo -e "  Docker         ${GREEN}✓ found${RESET}"
+    else
+        echo -e "  Docker         ${RED}✗ not found${RESET} — install: https://docs.docker.com/get-docker/"
+    fi
+
+    # Step 2: OpenShell
+    if _has openshell; then
+        echo -e "  OpenShell      ${GREEN}✓ found$(openshell --version 2>&1 | head -1 | sed 's/^/ (/')${RESET}"
+    else
+        echo -e "  OpenShell      ${YELLOW}⚠ not found${RESET} (Docker-only mode available)"
+        echo "                 Install: curl -fsSL https://www.nvidia.com/openshell.sh | bash"
+    fi
+
+    # Step 3: llama.cpp
+    if _llama_healthy; then
+        echo -e "  llama.cpp      ${GREEN}✓ running on :8080${RESET}"
+    else
+        echo -e "  llama.cpp      ${YELLOW}⚠ not running${RESET}"
+        echo "                 Start: llama-server -m models/<model>.gguf --port 8080 -ngl 99"
+    fi
+
+    # Step 4: Model files
+    MODEL_COUNT=$(find "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/models" -name "*.gguf" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$MODEL_COUNT" -gt 0 ]; then
+        echo -e "  Model files    ${GREEN}✓ $MODEL_COUNT .gguf file(s) in models/${RESET}"
+    else
+        echo -e "  Model files    ${YELLOW}⚠ none found${RESET} — drop .gguf files in models/"
+    fi
+
+    # Step 5: Hermes config
+    if [ -f ~/.hermes/config.yaml ]; then
+        echo -e "  Hermes config  ${GREEN}✓ ~/.hermes/config.yaml${RESET}"
+    else
+        echo -e "  Hermes config  ${YELLOW}⚠ not found${RESET} — run: ./scripts/setup.sh"
+    fi
+
+    # Step 6: Hermes memories
+    MEMORY_COUNT=$(find ~/.hermes/memories 2>/dev/null -type f | wc -l | tr -d ' ')
+    echo -e "  Memories       ${GREEN}${MEMORY_COUNT} files in ~/.hermes/memories/${RESET}"
+
+    # Step 7: Skills
+    SKILL_COUNT=$(find ~/.hermes/skills 2>/dev/null -type d -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+    echo -e "  Skills         ${GREEN}${SKILL_COUNT} installed in ~/.hermes/skills/${RESET}"
+
+    echo ""
+    if _has openshell && _llama_healthy; then
+        echo -e "${GREEN}Ready to launch!${RESET} Run: ${CYAN}hermesclaw start${RESET}"
+    elif _has docker; then
+        echo -e "${YELLOW}Docker mode available.${RESET} Run: ${CYAN}docker compose up${RESET}"
+    else
+        echo -e "${RED}Setup incomplete.${RESET} Run: ${CYAN}./scripts/setup.sh${RESET}"
+    fi
+    echo ""
+}
+
+cmd_start() {
+    local gpu_flag=""
+    local policy_preset="default"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --gpu)           gpu_flag="--gpu"; shift ;;
+            --policy)        policy_preset="$2"; shift 2 ;;
+            *) echo -e "${RED}Unknown flag: $1${RESET}" >&2; exit 1 ;;
+        esac
+    done
+
+    if _has openshell; then
+        echo -e "${BOLD}Starting HermesClaw (OpenShell mode)...${RESET}"
+
+        if ! _llama_healthy; then
+            echo -e "${YELLOW}⚠ llama.cpp not running on :8080${RESET}"
+            echo "  Start it first or configure a different inference provider."
+            echo -e "  ${CYAN}openshell inference set --provider <name> --model <model>${RESET}"
+        fi
+
+        local policy_file
+        policy_file=$(_policy_file "$policy_preset")
+
+        echo -e "  Policy:  ${CYAN}$policy_preset${RESET} ($policy_file)"
+        echo -e "  Sandbox: ${CYAN}$SANDBOX_NAME${RESET}"
+        [ -n "$gpu_flag" ] && echo -e "  GPU:     ${CYAN}enabled${RESET}"
+        echo ""
+
+        openshell sandbox create \
+            --policy "$policy_file" \
+            --name "$SANDBOX_NAME" \
+            $gpu_flag \
+            -- hermes gateway
+
+        echo ""
+        echo -e "${GREEN}✓ Sandbox started: $SANDBOX_NAME${RESET}"
+        echo ""
+        echo "Commands:"
+        echo -e "  ${CYAN}hermesclaw status${RESET}     — check health"
+        echo -e "  ${CYAN}hermesclaw connect${RESET}    — open shell"
+        echo -e "  ${CYAN}hermesclaw logs${RESET}       — view logs"
+        echo -e "  ${CYAN}hermesclaw chat \"hi\"${RESET} — talk to Hermes"
+    else
+        echo -e "${YELLOW}OpenShell not available — starting in Docker mode.${RESET}"
+        _require_docker
+        docker compose up
+    fi
+}
+
+cmd_stop() {
+    if _has openshell; then
+        _require_openshell
+        if _sandbox_running; then
+            openshell sandbox delete "$SANDBOX_NAME"
+            echo -e "${GREEN}✓ Sandbox $SANDBOX_NAME stopped.${RESET}"
+            echo -e "${DIM}Memories and skills preserved in ~/.hermes/${RESET}"
+        else
+            echo -e "${YELLOW}Sandbox $SANDBOX_NAME is not running.${RESET}"
+        fi
+    else
+        _require_docker
+        docker compose down
+    fi
+}
+
+cmd_status() {
+    echo ""
+    echo -e "${BOLD}HermesClaw Status${RESET}"
+    echo "================================"
+
+    # llama.cpp / inference
+    if _llama_healthy; then
+        echo -e "  llama.cpp      ${GREEN}running${RESET} (port 8080)"
+    else
+        echo -e "  llama.cpp      ${RED}not running${RESET}"
+    fi
+
+    # OpenShell / Docker
+    if _has openshell; then
+        echo ""
+        echo -e "  ${BOLD}Sandbox (OpenShell):${RESET}"
+        openshell sandbox get "$SANDBOX_NAME" 2>/dev/null || \
+            echo -e "  ${YELLOW}$SANDBOX_NAME not running${RESET}"
+        echo ""
+        if _has openshell; then
+            echo -e "  ${BOLD}Inference config:${RESET}"
+            openshell inference get 2>/dev/null || echo "  (not configured)"
+        fi
+    else
+        echo ""
+        echo -e "  ${BOLD}Docker services:${RESET}"
+        docker compose ps 2>/dev/null || echo -e "  ${YELLOW}docker compose not running${RESET}"
+    fi
+
+    # Memories & Skills
+    echo ""
+    MEMORY_COUNT=$(find ~/.hermes/memories 2>/dev/null -type f | wc -l | tr -d ' ')
+    SKILL_COUNT=$(find ~/.hermes/skills 2>/dev/null -type d -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+    echo -e "  Memories:  ${GREEN}$MEMORY_COUNT files${RESET} in ~/.hermes/memories/"
+    echo -e "  Skills:    ${GREEN}$SKILL_COUNT installed${RESET} in ~/.hermes/skills/"
+    echo ""
+}
+
+cmd_connect() {
+    if _has openshell; then
+        _require_openshell
+        echo -e "Connecting to sandbox ${CYAN}$SANDBOX_NAME${RESET}..."
+        openshell sandbox connect "$SANDBOX_NAME"
+    else
+        _require_docker
+        docker exec -it hermesclaw bash
+    fi
+}
+
+cmd_logs() {
+    local follow_flag=""
+    [[ "${1:-}" == "--follow" ]] && follow_flag="--follow"
+
+    if _has openshell; then
+        _require_openshell
+        openshell logs "$SANDBOX_NAME" $follow_flag
+    else
+        _require_docker
+        docker compose logs $follow_flag hermesclaw
+    fi
+}
+
+cmd_policy_list() {
+    echo ""
+    echo -e "${BOLD}Available policy presets:${RESET}"
+    echo ""
+    echo -e "  ${CYAN}strict${RESET}      Inference only — no internet, no gateway, most secure"
+    echo -e "  ${CYAN}gateway${RESET}     Inference + Telegram + Discord"
+    echo -e "  ${CYAN}permissive${RESET}  Inference + all gateways + web search + GitHub skills"
+    echo -e "  ${CYAN}default${RESET}     Base policy (inference + commented-out extras)"
+    echo ""
+    echo "Apply:"
+    echo -e "  ${CYAN}hermesclaw policy-set gateway${RESET}"
+    echo -e "  ${DIM}# hot-reloads in ~5 seconds, no sandbox restart needed${RESET}"
+    echo ""
+}
+
+cmd_policy_set() {
+    local preset="${1:-}"
+    if [ -z "$preset" ]; then
+        echo -e "${RED}Usage: hermesclaw policy-set PRESET${RESET}"
+        cmd_policy_list
+        exit 1
+    fi
+
+    _require_openshell
+    local policy_file
+    policy_file=$(_policy_file "$preset")
+
+    echo -e "Applying policy ${CYAN}$preset${RESET} to sandbox ${CYAN}$SANDBOX_NAME${RESET}..."
+    openshell policy set "$SANDBOX_NAME" --policy "$policy_file" --wait
+    echo -e "${GREEN}✓ Policy updated (hot-reloaded — no restart needed).${RESET}"
+}
+
+cmd_doctor() {
+    echo ""
+    echo -e "${BOLD}HermesClaw Doctor${RESET}"
+    echo "================================"
+    local all_ok=true
+
+    # 1. Docker
+    if _has docker; then
+        echo -e "  [${GREEN}✓${RESET}] Docker: $(docker --version | head -1)"
+    else
+        echo -e "  [${RED}✗${RESET}] Docker: not found"
+        all_ok=false
+    fi
+
+    # 2. OpenShell
+    if _has openshell; then
+        echo -e "  [${GREEN}✓${RESET}] OpenShell: $(openshell --version 2>&1 | head -1)"
+    else
+        echo -e "  [${YELLOW}⚠${RESET}] OpenShell: not found (Docker-only mode)"
+    fi
+
+    # 3. llama.cpp
+    if _llama_healthy; then
+        echo -e "  [${GREEN}✓${RESET}] llama.cpp: running on :8080"
+    else
+        echo -e "  [${RED}✗${RESET}] llama.cpp: not responding on :8080"
+        all_ok=false
+    fi
+
+    # 4. Hermes (if installed locally)
+    if _has hermes; then
+        local hv
+        hv=$(hermes version 2>&1 | head -1)
+        echo -e "  [${GREEN}✓${RESET}] Hermes (local): $hv"
+    else
+        echo -e "  [${DIM}–${RESET}] Hermes (local): not installed (runs inside container)"
+    fi
+
+    # 5. Docker image
+    if docker image inspect hermesclaw:latest &>/dev/null; then
+        echo -e "  [${GREEN}✓${RESET}] Docker image: hermesclaw:latest"
+    else
+        echo -e "  [${YELLOW}⚠${RESET}] Docker image: not built — run: ./scripts/setup.sh"
+    fi
+
+    # 6. Hermes config
+    if [ -f ~/.hermes/config.yaml ]; then
+        echo -e "  [${GREEN}✓${RESET}] Hermes config: ~/.hermes/config.yaml"
+    else
+        echo -e "  [${YELLOW}⚠${RESET}] Hermes config: missing — run: ./scripts/setup.sh"
+    fi
+
+    # 7. Model files
+    local repo_dir
+    repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    MODEL_COUNT=$(find "$repo_dir/models" -name "*.gguf" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$MODEL_COUNT" -gt 0 ]; then
+        echo -e "  [${GREEN}✓${RESET}] Model files: $MODEL_COUNT .gguf file(s) in models/"
+    else
+        echo -e "  [${YELLOW}⚠${RESET}] Model files: none — drop .gguf files in models/"
+    fi
+
+    # 8. Policy files
+    if [ -f "$POLICY_DIR/hermesclaw-policy.yaml" ]; then
+        echo -e "  [${GREEN}✓${RESET}] Policy files: found in openshell/"
+    else
+        echo -e "  [${RED}✗${RESET}] Policy files: missing openshell/"
+        all_ok=false
+    fi
+
+    # 9. Sandbox alive (if OpenShell available)
+    if _has openshell; then
+        if _sandbox_running; then
+            echo -e "  [${GREEN}✓${RESET}] Sandbox $SANDBOX_NAME: running"
+        else
+            echo -e "  [${YELLOW}⚠${RESET}] Sandbox $SANDBOX_NAME: not running"
+        fi
+    fi
+
+    echo ""
+    if $all_ok; then
+        echo -e "${GREEN}All systems go.${RESET}"
+    else
+        echo -e "${YELLOW}Some checks failed — see above.${RESET}"
+    fi
+    echo ""
+}
+
+cmd_chat() {
+    local prompt="${1:-}"
+    if [ -z "$prompt" ]; then
+        echo -e "${RED}Usage: hermesclaw chat \"your prompt\"${RESET}"
+        exit 1
+    fi
+
+    if _has openshell && _sandbox_running; then
+        # Run inside the sandbox
+        openshell sandbox upload "$SANDBOX_NAME" /dev/stdin /tmp/_hc_prompt.txt <<< "$prompt"
+        openshell sandbox connect "$SANDBOX_NAME" -- \
+            hermes chat -q "$(cat /tmp/_hc_prompt.txt)"
+    elif _has docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
+        # Run in the Docker container
+        docker exec hermesclaw hermes chat -q "$prompt"
+    elif _has hermes; then
+        # Run locally
+        hermes chat -q "$prompt"
+    else
+        echo -e "${YELLOW}No running sandbox or Hermes installation found.${RESET}"
+        echo "Start with: hermesclaw start"
+        exit 1
+    fi
+}
+
+cmd_version() {
+    echo "hermesclaw $VERSION"
+    if _has openshell; then
+        echo "openshell $(openshell --version 2>&1 | head -1)"
+    fi
+    if _has hermes; then
+        echo "hermes $(hermes version 2>&1 | head -1)"
+    fi
+}
+
+cmd_uninstall() {
+    echo -e "${YELLOW}This will remove the hermesclaw Docker image.${RESET}"
+    echo "Your memories and skills in ~/.hermes/ will NOT be deleted."
+    echo ""
+    read -r -p "Continue? [y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
+
+    # Stop sandbox if running
+    if _has openshell && _sandbox_running; then
+        openshell sandbox delete "$SANDBOX_NAME" 2>/dev/null || true
+        echo "Sandbox $SANDBOX_NAME removed."
+    fi
+
+    # Remove Docker image
+    if docker image inspect hermesclaw:latest &>/dev/null; then
+        docker rmi hermesclaw:latest
+        echo "Docker image hermesclaw:latest removed."
+    fi
+
+    echo -e "${GREEN}HermesClaw uninstalled.${RESET}"
+    echo -e "${DIM}Memories preserved: ~/.hermes/${RESET}"
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+    help|--help|-h)    cmd_help ;;
+    onboard)           cmd_onboard ;;
+    start)             cmd_start "$@" ;;
+    stop)              cmd_stop ;;
+    status)            cmd_status ;;
+    connect)           cmd_connect ;;
+    logs)              cmd_logs "$@" ;;
+    policy-list)       cmd_policy_list ;;
+    policy-set)        cmd_policy_set "$@" ;;
+    doctor)            cmd_doctor ;;
+    chat)              cmd_chat "$@" ;;
+    version|--version) cmd_version ;;
+    uninstall)         cmd_uninstall ;;
+    *)
+        echo -e "${RED}Unknown command: $COMMAND${RESET}"
+        cmd_help
+        exit 1
+        ;;
+esac

@@ -1,0 +1,76 @@
+# HermesClaw — GATEWAY policy preset
+#
+# Enables messaging gateway (Telegram + Discord + Signal).
+# Hermes can:
+#   - Call the local LLM via inference.local
+#   - Post/receive Telegram messages
+#   - Post/receive Discord messages
+#   - No web search, no skills download
+#
+# Use when: running hermes gateway as a Telegram/Discord bot.
+#
+# Apply: openshell policy set hermesclaw-1 --policy openshell/policy-gateway.yaml --wait
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /bin
+    - /etc/ssl
+    - /etc/resolv.conf
+    - /etc/passwd
+    - /etc/group
+    - /sandbox/knowledge
+    - /sandbox/configs
+  read_write:
+    - /root/.hermes
+    - /sandbox
+    - /tmp
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: hermes
+  run_as_group: hermes
+
+network_policies:
+  inference_local:
+    endpoints:
+      - host: "inference.local"
+        port: 443
+        enforcement: enforce
+        access: full
+      - host: "inference.local"
+        port: 80
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: "/root/.local/bin/hermes*"
+      - path: "/usr/bin/python3*"
+
+  telegram_gateway:
+    endpoints:
+      - host: "api.telegram.org"
+        port: 443
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: "/root/.local/bin/hermes*"
+
+  discord_gateway:
+    endpoints:
+      - host: "discord.com"
+        port: 443
+        enforcement: enforce
+        access: full
+      - host: "gateway.discord.gg"
+        port: 443
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: "/root/.local/bin/hermes*"

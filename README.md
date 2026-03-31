@@ -6,37 +6,34 @@
 
 NVIDIA built OpenShell to hardware-enforce AI agent behavior — blocking network egress, filesystem writes, and dangerous syscalls at the kernel level. They demonstrated it with Claude Code, Codex, and Cursor. They used it to build NemoClaw (OpenClaw + OpenShell). **Nobody had done it for Hermes Agent — until now.**
 
-HermesClaw puts Hermes inside OpenShell. The agent gets its full capability stack (40+ tools, persistent memory, self-improving skills, Telegram/Signal/Discord gateway) while the sandbox enforces hard limits: Hermes can only reach `inference.local` (your llama.cpp), can only write to `~/.hermes/` and `/sandbox/`, and cannot call `ptrace`, `mount`, or `kexec`. If a skill goes rogue, the OS stops it.
+HermesClaw puts Hermes inside OpenShell. The agent gets its full capability stack (40+ tools, persistent memory, self-improving skills, Telegram/Signal/Discord/Slack/WhatsApp/Email gateway) while the sandbox enforces hard limits: Hermes can only reach `inference.local` (your llama.cpp or any OpenAI-compatible API), can only write to `~/.hermes/` and `/sandbox/`, and cannot call `ptrace`, `mount`, or `kexec`. If a skill goes rogue, the OS stops it.
 
 ---
 
 ## Architecture
 
 ```
-User (Telegram / Signal / Discord / CLI)
+User (Telegram / Signal / Discord / Slack / WhatsApp / Email / CLI)
          │
          ▼
-  ┌─────────────────────────────────────┐
-  │        Hermes Agent                 │
-  │  memory · skills · 40+ tools        │
-  │  ┌───────────────────────────────┐  │
-  │  │    OpenShell Sandbox          │  │
-  │  │  Network:  inference.local    │  │
-  │  │            (all else BLOCKED) │  │
-  │  │  FS:       ~/.hermes/ only    │  │
-  │  │  Syscalls: ptrace/mount/kexec │  │
-  │  │            BLOCKED            │  │
-  │  └───────────────────────────────┘  │
-  └─────────────────────────────────────┘
-         │  OpenShell intercepts
-         │  and routes to host
+  ┌─────────────────────────────────────────────────────┐
+  │         Hermes Agent (NousResearch)                  │
+  │  40+ tools · memory · skills · gateway · voice       │
+  │  ┌─────────────────────────────────────────────┐    │
+  │  │        OpenShell Sandbox (NVIDIA)            │    │
+  │  │  Network:  inference.local only (OPA proxy)  │    │
+  │  │  FS:       ~/.hermes/ + /sandbox/ (Landlock) │    │
+  │  │  Process:  non-root, Seccomp BPF             │    │
+  │  │  Inference: credential stripping + injection │    │
+  │  └─────────────────────────────────────────────┘    │
+  └─────────────────────────────────────────────────────┘
+         │  OpenShell privacy router intercepts
+         │  inference.local calls and routes to:
          ▼
-  llama.cpp  (port 8080, Metal / CUDA)
-  ─── or ───
-  Any OpenAI-compatible API
+  llama.cpp (local, Metal/CUDA)  OR  NVIDIA API  OR  OpenAI  OR  Anthropic
 ```
 
-OpenShell intercepts every call to `inference.local` inside the sandbox and routes it to the configured endpoint — your local llama.cpp, vLLM, or any cloud API. Hermes never knows it's sandboxed.
+OpenShell intercepts every call to `inference.local` inside the sandbox and routes it to the configured backend. Hermes never knows it's sandboxed.
 
 ---
 
@@ -44,40 +41,32 @@ OpenShell intercepts every call to `inference.local` inside the sandbox and rout
 
 ### Path 1 — Docker (no NVIDIA hardware required)
 
-Run Hermes + llama.cpp together with a single command. No sandbox, but all Hermes features work.
-
-**Prerequisites:** Docker, a `.gguf` model file
+Full Hermes + llama.cpp in one command. No sandbox, but all Hermes features work.
 
 ```bash
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
 
-# Copy env file and point it at your model
-cp .env.example .env
-# Edit .env: set MODEL_FILE and N_GPU_LAYERS
+cp .env.example .env          # set MODEL_FILE and optionally bot tokens
+# drop your .gguf model into models/
 
-# Drop your model into models/
-# (example: models/Qwen3-4B-Q4_K_M.gguf)
+./scripts/setup.sh            # build image, create ~/.hermes/config.yaml
 
-# Set up Hermes config
-./scripts/setup.sh
-
-# Start everything
-docker compose up
+docker compose up             # start everything
+docker compose --profile gpu up  # GPU variant (requires NVIDIA Container Toolkit)
 ```
 
-Verify Hermes is alive inside the container:
+Test Hermes inside the container:
 
 ```bash
 docker exec -it hermesclaw hermes chat -q "hello"
-docker exec -it hermesclaw ls /root/.hermes/memories/
+docker exec -it hermesclaw hermes status
+docker exec -it hermesclaw hermes skills list
 ```
 
 ---
 
 ### Path 2 — OpenShell Sandbox (full hardware enforcement)
-
-**Prerequisites:** Docker, NVIDIA GPU, OpenShell CLI, a `.gguf` model
 
 ```bash
 # Install OpenShell (requires NVIDIA account)
@@ -86,94 +75,153 @@ curl -fsSL https://www.nvidia.com/openshell.sh | bash
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
 
-# Build image + register policy and profile
-./scripts/setup.sh
+./scripts/setup.sh            # build image, register policy + profile
 
 # Start llama.cpp on the host
 llama-server -m models/<model>.gguf --port 8080 -ngl 99
 
-# Launch Hermes inside the sandbox
-./scripts/start.sh
+./scripts/start.sh            # or: hermesclaw start
 ```
 
-Check status:
+Or use the `hermesclaw` CLI for everything:
 
 ```bash
-./scripts/status.sh
-openshell sandbox status hermesclaw-1
+./scripts/hermesclaw onboard       # check all prerequisites
+./scripts/hermesclaw start         # start with default (strict) policy
+./scripts/hermesclaw start --gpu --policy gateway  # GPU + messaging enabled
+./scripts/hermesclaw status        # health + inference config + memory/skill counts
+./scripts/hermesclaw chat "hello"  # one-shot message
+./scripts/hermesclaw connect       # interactive shell inside sandbox
+./scripts/hermesclaw logs          # stream logs
 ```
+
+---
+
+## Policy Presets
+
+Switch security posture **without restarting** the sandbox:
+
+```bash
+./scripts/hermesclaw policy-list          # show all presets
+
+./scripts/hermesclaw policy-set strict    # inference only (default)
+./scripts/hermesclaw policy-set gateway   # + Telegram + Discord
+./scripts/hermesclaw policy-set permissive  # + web search + GitHub skills
+```
+
+| Preset | Inference | Telegram/Discord | Web Search | GitHub Skills |
+|--------|:---------:|:----------------:|:----------:|:-------------:|
+| `strict` | ✅ | ❌ | ❌ | ❌ |
+| `gateway` | ✅ | ✅ | ❌ | ❌ |
+| `permissive` | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
 ## What OpenShell Enforces
 
-| Layer | Rule | Why it matters |
-|-------|------|----------------|
-| Network | Egress only to `inference.local` (80/443) | Hermes tools can't exfiltrate data or phone home |
-| Network | All other outbound traffic blocked | Rogue skills can't download payloads |
-| Filesystem | Read/write: `~/.hermes/`, `/sandbox/`, `/tmp` | Memories are contained; host filesystem untouched |
-| Filesystem | All other paths: deny | Skills can't read `/etc/passwd`, SSH keys, etc. |
-| Syscalls | `ptrace`, `mount`, `umount2`, `kexec_load`, `perf_event_open`, `process_vm_readv/writev` blocked | Container escape vectors closed |
+| Layer | Mechanism | Rule |
+|-------|-----------|------|
+| **Network** | OPA + HTTP CONNECT proxy | Egress to approved hosts only; all else blocked |
+| **Filesystem** | Landlock LSM | `~/.hermes/` + `/sandbox/` + `/tmp/` only |
+| **Process** | Seccomp BPF | `ptrace`, `mount`, `kexec_load`, `perf_event_open`, `process_vm_*` blocked |
+| **Inference** | Privacy router | Credentials stripped from agent; backend credentials injected by OpenShell |
 
-The policy is in [`openshell/hermesclaw-policy.yaml`](openshell/hermesclaw-policy.yaml). The profile (inference routing, resource limits, mounts) is in [`openshell/hermesclaw-profile.yaml`](openshell/hermesclaw-profile.yaml).
+All four layers are enforced **out-of-process** — even a fully compromised Hermes instance cannot override them.
 
 ---
 
 ## Hermes Features Inside the Sandbox
 
-Everything in Hermes that doesn't need unrestricted internet access works:
+Everything that doesn't need unrestricted internet access works out of the box:
 
 | Feature | Status | Notes |
-|---------|--------|-------|
-| `hermes chat` | Works | Routes through `inference.local` → llama.cpp |
-| `hermes gateway` (Telegram) | Works | Outbound to Telegram is allowed if you add it to policy |
-| `hermes gateway` (Signal) | Works | Same — add signal-cli endpoint |
-| Persistent memory | Works | Stored in `/root/.hermes/memories/` (volume-mounted) |
-| Self-improving skills | Works | Skills written to `/root/.hermes/skills/` |
-| 40+ built-in tools | Mostly works | Tools that need external APIs require policy egress rules |
-| Web search tools | Blocked by default | Uncomment `api.duckduckgo.com` in policy to allow |
+|---------|:------:|-------|
+| `hermes chat` | ✅ | Routes via `inference.local` → llama.cpp |
+| Persistent memory (MEMORY.md + USER.md) | ✅ | Volume-mounted on host, survives sandbox recreation |
+| Self-improving skills (auto-create) | ✅ | DSPy + GEPA optimization, stored in `~/.hermes/skills/` |
+| 40+ built-in tools | ✅ | Terminal, file, vision, voice, image gen, browser, RL, etc. |
+| Cron / scheduled tasks | ✅ | `hermes cron create` |
+| Multi-agent delegation | ✅ | `hermes delegate_task` |
+| MCP server integration | ✅ | `hermes mcp` |
+| IDE integration (ACP) | ✅ | VS Code, JetBrains, Zed |
+| Python SDK | ✅ | `from run_agent import AIAgent` |
+| Plugin architecture | ✅ | Drop `.py` into `~/.hermes/plugins/` |
+| Telegram gateway | ✅ | With `gateway` or `permissive` policy |
+| Discord gateway | ✅ | With `gateway` or `permissive` policy |
+| Signal gateway | ✅ | With `gateway` policy + signal-cli bridge |
+| Slack / WhatsApp / Email | ✅ | With `permissive` policy |
+| Voice notes (all platforms) | ✅ | Auto-transcribed before passing to agent |
+| Web search tools | ✅ | With `permissive` policy (DuckDuckGo) |
+| Skills download (GitHub) | ✅ | With `permissive` policy |
 
-To enable web search, uncomment the `duckduckgo.com` line in `openshell/hermesclaw-policy.yaml` and re-apply the policy:
+---
 
-```yaml
-network:
-  egress:
-    - host: api.duckduckgo.com
-      port: 443
-      protocol: tcp
+## hermesclaw CLI
+
+```
+hermesclaw onboard              First-time setup and prerequisite check
+hermesclaw start [--gpu] [--policy PRESET]
+                                Start sandbox (OpenShell) or docker compose
+hermesclaw stop                 Stop sandbox (memories + skills preserved)
+hermesclaw status               Show inference config + memory/skill counts
+hermesclaw connect              Open interactive shell inside sandbox
+hermesclaw logs [--follow]      Stream sandbox logs
+hermesclaw policy-list          List available policy presets
+hermesclaw policy-set PRESET    Hot-swap policy without restart
+hermesclaw doctor               End-to-end diagnostic
+hermesclaw chat "prompt"        One-shot message to Hermes
+hermesclaw version              Print version
+hermesclaw uninstall            Remove Docker image (data preserved)
 ```
 
-```bash
-openshell policy apply openshell/hermesclaw-policy.yaml
-```
+---
+
+## HermesClaw vs NemoClaw
+
+Full comparison table and test results: [docs/test-results.md](docs/test-results.md)
+
+**TL;DR:**
+
+| | HermesClaw | NemoClaw |
+|---|---|---|
+| **Agent** | Hermes (NousResearch, 18k ⭐) | OpenClaw (NVIDIA) |
+| **Sandbox** | OpenShell | OpenShell |
+| **Tools** | 40+ (web, browser, vision, voice, RL, …) | ~10 |
+| **Memory** | Persistent MEMORY.md + USER.md | None |
+| **Self-improving skills** | Yes (DSPy + GEPA) | No |
+| **Messaging gateway** | Telegram, Discord, Signal, Slack, WhatsApp, Email | None |
+| **Voice** | Push-to-talk + voice notes on all platforms | No |
+| **Python SDK** | Yes (`from run_agent import AIAgent`) | No |
+| **MCP servers** | Yes | No |
+| **IDE integration** | VS Code, JetBrains, Zed (ACP) | No |
+| **Inference providers** | Local, NVIDIA, OpenAI, Anthropic, Ollama, vLLM | Same |
+| **macOS support** | Yes (Docker mode) | No (Linux required) |
+| **Without NVIDIA GPU** | Yes (CPU Docker mode) | No |
+| **First implementation** | **This repo** | NVIDIA official |
 
 ---
 
 ## Personalise Hermes
 
-Copy the example persona config and fill it in:
-
 ```bash
 cp configs/persona.yaml.example configs/persona.yaml
 ```
 
-Edit `configs/persona.yaml` — your name, role, expertise, ticker watchlist, preferred response style, and context. Hermes uses this to personalise all responses.
+Edit `configs/persona.yaml` — your name, role, expertise, ticker watchlist, response style. Hermes loads this into every session.
+
+For deeper personalisation, edit `~/.hermes/SOUL.md` — this is the identity file that goes directly into Hermes's system prompt.
 
 ---
 
-## Comparison
+## Diagnostics
 
-| | HermesClaw | NemoClaw | Plain Hermes |
-|---|---|---|---|
-| Agent | Hermes (NousResearch) | OpenClaw (NVIDIA) | Hermes (NousResearch) |
-| Sandbox | OpenShell | OpenShell | None |
-| Inference | llama.cpp / any OpenAI API | llama.cpp / any OpenAI API | Any |
-| Memory | Persistent (`~/.hermes/memories/`) | N/A | Persistent |
-| Tools | 40+ | OpenClaw tools | 40+ |
-| Gateway | Telegram, Signal, Discord | N/A | Telegram, Signal, Discord |
-| First implementation | **This repo** | NVIDIA official | N/A |
+```bash
+./scripts/doctor.sh           # full diagnostic report
+./scripts/doctor.sh --quick   # skip slow checks
 
-NemoClaw = OpenClaw + OpenShell. HermesClaw = Hermes + OpenShell. They use the same underlying sandbox runtime; the agents are different.
+./scripts/test.sh             # run feature comparison test suite
+./scripts/test.sh --quick     # skip live inference tests
+```
 
 ---
 
@@ -181,38 +229,45 @@ NemoClaw = OpenClaw + OpenShell. HermesClaw = Hermes + OpenShell. They use the s
 
 ```
 hermesclaw/
-├── Dockerfile                    # Hermes Agent inside debian:bookworm-slim
-├── docker-compose.yml            # llama-server + hermesclaw (Docker path)
-├── .env.example                  # MODEL_FILE, N_GPU_LAYERS
+├── Dockerfile                         # Hermes Agent on debian:bookworm-slim
+├── docker-compose.yml                 # llama-server + hermesclaw (CPU + GPU profiles)
+├── .env.example                       # MODEL_FILE, N_GPU_LAYERS, bot tokens
 ├── openshell/
-│   ├── hermesclaw-policy.yaml    # Network / filesystem / syscall rules
-│   └── hermesclaw-profile.yaml  # Inference routing, mounts, resource limits
+│   ├── hermesclaw-policy.yaml         # Default policy (inference only + commented extras)
+│   ├── hermesclaw-profile.yaml        # Sandbox profile reference (image, mounts, inference)
+│   ├── policy-strict.yaml             # Strict preset: inference only
+│   ├── policy-gateway.yaml            # Gateway preset: inference + Telegram + Discord
+│   └── policy-permissive.yaml         # Permissive preset: everything
 ├── configs/
-│   ├── hermes.yaml.example       # Hermes config (inference.local endpoint)
-│   └── persona.yaml.example      # User persona for personalised responses
+│   ├── hermes.yaml.example            # Full Hermes config (memory, skills, gateway, tools)
+│   └── persona.yaml.example           # User persona for personalised responses
 ├── scripts/
-│   ├── setup.sh                  # One-time setup (Docker + OpenShell)
-│   ├── start.sh                  # Start sandbox or docker compose
-│   └── status.sh                 # Health check
-├── models/                       # Drop .gguf files here
-└── knowledge/                    # Drop documents here (mounted read-only)
+│   ├── hermesclaw                     # Main CLI (start/stop/status/connect/policy-set/doctor)
+│   ├── setup.sh                       # One-time setup
+│   ├── start.sh                       # Start (OpenShell or Docker)
+│   ├── status.sh                      # Quick status check
+│   ├── doctor.sh                      # End-to-end diagnostic
+│   └── test.sh                        # Feature comparison test suite
+├── docs/
+│   ├── features.md                    # Full feature reference
+│   └── test-results.md                # Generated comparison table (./scripts/test.sh)
+├── models/                            # Drop .gguf model weights here
+└── knowledge/                         # Drop documents here (mounted read-only as RAG context)
 ```
 
 ---
 
 ## For the NVIDIA and Hermes Teams
 
-This is the first public implementation of Hermes Agent running inside OpenShell. We've made a best-effort at the policy and profile format based on public NemoClaw examples — if the format needs corrections, pull requests are very welcome.
+This is the first public implementation of Hermes Agent running inside OpenShell. The policy and profile format is based on the official OpenShell schema (`version: 1`, `filesystem_policy`, `landlock`, `process`, `network_policies`). If anything needs correction, pull requests are very welcome.
 
-If NVIDIA or NousResearch want to make this official, we'd be happy to transfer the repo or collaborate. The goal is simple: give Hermes users a sandbox story as strong as what OpenClaw users already have.
-
-Issues, corrections, and contributions welcome.
+If NVIDIA or NousResearch want to make this official or collaborate, we'd love to hear from you.
 
 ---
 
 ## Related
 
 - [hermes-agent-nemoclaw-openclaw](https://github.com/TheAiSingularity/hermes-agent-nemoclaw-openclaw) — The parent repo: Hermes + NemoClaw + lightweight bots in one stack
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — NousResearch's agent (18k stars)
-- [NemoClaw](https://github.com/NVIDIA/NemoClaw) — NVIDIA's OpenClaw + OpenShell implementation
-- [OpenShell](https://www.nvidia.com/openshell) — NVIDIA's hardware-enforced AI agent sandbox
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — NousResearch's agent (18k ⭐)
+- [NemoClaw](https://github.com/NVIDIA/NemoClaw) — NVIDIA's OpenClaw + OpenShell
+- [OpenShell](https://docs.nvidia.com/openshell/latest/) — NVIDIA's hardware-enforced AI sandbox

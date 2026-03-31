@@ -6,68 +6,133 @@
 #      cp .env.example .env
 #
 # 2. Download a model into models/:
-#      curl -L -o models/Qwen3.5-4B-Q4_K_M.gguf \
-#        "https://huggingface.co/Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF/resolve/main/Qwen3.5-4B.Q4_K_M.gguf"
+#      curl -L -o models/Qwen3-4B-Q4_K_M.gguf <model-url>
 #
 # 3. Start everything:
 #      docker compose up
 #
+#    Or with GPU (NVIDIA Container Toolkit required):
+#      docker compose --profile gpu up
+#
 # 4. Test Hermes:
 #      docker exec -it hermesclaw hermes chat -q "hello"
+#      docker exec -it hermesclaw hermes status
 #
 # For OpenShell sandbox mode (NVIDIA hardware):
 #      ./scripts/setup.sh
-#      ./scripts/start.sh
+#      hermesclaw start
 #
-# NOTE: In this docker-compose setup, Hermes reaches llama.cpp via the
-# Docker network (http://llama-server:8080/v1). When running under
-# OpenShell, inference calls go through inference.local (the OpenShell
-# inference router) — same result, different path.
+# NOTE: In Docker mode, Hermes reaches llama.cpp via the Docker network
+# (http://llama-server:8080/v1). When running under OpenShell, inference
+# calls go through inference.local (the OpenShell privacy router).
 
 services:
 
   # ── llama.cpp inference server ─────────────────────────────────────────────
+  # CPU-only mode (default) — works everywhere, no NVIDIA hardware needed
   llama-server:
     image: ghcr.io/ggerganov/llama.cpp:server
     container_name: llama-server
+    profiles: ["default", ""]
     ports:
-      - "8080:8080"
+      - "${LLAMA_PORT:-8080}:8080"
     volumes:
       - ./models:/models:ro
     command: >
-      -m /models/${MODEL_FILE:-Qwen3.5-4B-Q4_K_M.gguf}
+      -m /models/${MODEL_FILE:-Qwen3-4B-Q4_K_M.gguf}
       --port 8080
       --host 0.0.0.0
-      --ctx-size 8192
-      --n-gpu-layers ${N_GPU_LAYERS:-0}
+      --ctx-size ${CTX_SIZE:-8192}
+      --n-gpu-layers 0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
-      retries: 6
+      retries: 10
+      start_period: 30s
+
+  # ── llama.cpp inference server (GPU variant) ─────────────────────────────────
+  # NVIDIA GPU mode — requires NVIDIA Container Toolkit
+  # Activate: docker compose --profile gpu up
+  llama-server-gpu:
+    image: ghcr.io/ggerganov/llama.cpp:server-cuda
+    container_name: llama-server
+    profiles: ["gpu"]
+    ports:
+      - "${LLAMA_PORT:-8080}:8080"
+    volumes:
+      - ./models:/models:ro
+    command: >
+      -m /models/${MODEL_FILE:-Qwen3-4B-Q4_K_M.gguf}
+      --port 8080
+      --host 0.0.0.0
+      --ctx-size ${CTX_SIZE:-8192}
+      --n-gpu-layers ${N_GPU_LAYERS:-99}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   # ── Hermes Agent ────────────────────────────────────────────────────────────
   hermesclaw:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: hermesclaw
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false         # Start even without a .env file
     environment:
-      # Docker path: use the compose service hostname
-      # OpenShell path: OPENAI_BASE_URL is set to http://inference.local/v1 via the profile
-      - OPENAI_BASE_URL=http://llama-server:8080/v1
-      - OPENAI_API_KEY=not-needed
+      # Inference: Docker uses the compose network hostname.
+      # OpenShell: OPENAI_BASE_URL is overridden to http://inference.local/v1
+      OPENAI_BASE_URL: "http://llama-server:8080/v1"
+      OPENAI_API_KEY: "not-needed"
+      HERMES_HOME: "/root/.hermes"
+      # Gateway tokens (override in .env)
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
+      SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN:-}"
+      # Privacy routing — sensitivity threshold for local vs cloud inference
+      # 0.0 = always local, 1.0 = always cloud, 0.7 = default (route only low-sensitivity to cloud)
+      HERMES_PRIVACY_THRESHOLD: "${HERMES_PRIVACY_THRESHOLD:-0.0}"
+      # Approval mode: manual | smart | off
+      HERMES_APPROVAL_MODE: "${HERMES_APPROVAL_MODE:-smart}"
     volumes:
-      # Persist Hermes memories and skills across container restarts
-      - hermesclaw-memories:/root/.hermes
-      # Mount user's knowledge docs read-only into the sandbox
+      # Persist Hermes memories across container restarts
+      - hermesclaw-memories:/root/.hermes/memories
+      # Persist skills across container restarts (self-improvement survives restarts)
+      - hermesclaw-skills:/root/.hermes/skills
+      # Mount user knowledge docs read-only for RAG context
       - ./knowledge:/sandbox/knowledge:ro
-      # Mount persona config if it exists
+      # Mount persona + config files read-only
       - ./configs:/sandbox/configs:ro
+    ports:
+      # Expose gateway webhook port (for Telegram webhook mode)
+      - "${HERMESCLAW_PORT:-8090}:8090"
     depends_on:
       llama-server:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "hermes", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   hermesclaw-memories:
+    driver: local
+  hermesclaw-skills:
+    driver: local

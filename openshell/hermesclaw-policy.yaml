@@ -1,100 +1,150 @@
 # HermesClaw — OpenShell Sandbox Policy
 #
-# This policy controls what Hermes Agent is allowed to do inside the sandbox.
-# The OpenShell runtime enforces these rules at the kernel level using:
-#   - Landlock LSM  (filesystem isolation)
-#   - Network namespaces + iptables  (network egress control)
-#   - seccomp  (syscall filtering)
+# Enforced at the kernel level via:
+#   Landlock LSM    — filesystem isolation (locked at sandbox creation)
+#   Seccomp BPF     — syscall filtering    (locked at sandbox creation)
+#   OPA + HTTP CONNECT proxy — network egress control (hot-reloadable)
 #
-# Based on the same pattern used by NemoClaw for OpenClaw.
+# Apply to a running sandbox:
+#   openshell policy set hermesclaw-1 --policy openshell/hermesclaw-policy.yaml --wait
 #
-# Apply with:
-#   openshell policy apply openshell/hermesclaw-policy.yaml
+# Create sandbox with this policy:
+#   openshell sandbox create --policy openshell/hermesclaw-policy.yaml -- hermes gateway
 #
-# Reference: https://docs.nvidia.com/openshell/latest/reference/policy.html
+# Reference: https://docs.nvidia.com/openshell/latest/reference/policy-schema.html
 
-apiVersion: openshell/v1
-kind: SandboxPolicy
+version: 1
 
-metadata:
-  name: hermesclaw
-  description: "OpenShell policy for Hermes Agent — allows inference, blocks all other egress"
+# ── Filesystem (Landlock LSM — STATIC, locked at creation) ───────────────────
+# Changes require destroying and recreating the sandbox.
+filesystem_policy:
+  include_workdir: true         # Auto-include the agent's working directory (/sandbox)
 
-# ── Network ─────────────────────────────────────────────────────────────────
-network:
-  egress:
-    # Allow LLM inference calls to OpenShell's inference router.
-    # OpenShell intercepts calls to inference.local and routes them to
-    # the configured inference endpoint (llama.cpp on the host).
-    - host: inference.local
-      port: 80
-      protocol: tcp
-    - host: inference.local
-      port: 443
-      protocol: tcp
+  read_only:
+    - /usr                      # System binaries and libraries
+    - /lib                      # Shared libraries
+    - /lib64                    # 64-bit shared libraries
+    - /bin                      # Core executables
+    - /etc/ssl                  # TLS certificates (needed for HTTPS to inference.local)
+    - /etc/resolv.conf          # DNS resolution
+    - /etc/passwd               # User ID lookup
+    - /etc/group                # Group ID lookup
+    - /sandbox/knowledge        # User docs (mounted read-only from host)
+    - /sandbox/configs          # Persona + hermes config (mounted read-only from host)
 
-    # Optional: allow Hermes to download skills from GitHub.
-    # Uncomment to enable Hermes self-improvement and skill creation.
-    # Leave commented for maximum security (no outbound internet).
-    #
-    # - host: github.com
-    #   port: 443
-    #   protocol: tcp
-    # - host: raw.githubusercontent.com
-    #   port: 443
-    #   protocol: tcp
-    # - host: api.github.com
-    #   port: 443
-    #   protocol: tcp
+  read_write:
+    - /root/.hermes             # Hermes memories, skills, config, auth tokens
+    - /sandbox                  # Agent working directory (code, output, tasks)
+    - /tmp                      # Temporary files
 
-  # Block all other outbound traffic by default.
-  # Hermes cannot phone home, exfiltrate data, or make arbitrary HTTP calls.
-  ingress:
-    - deny: all
-  default: deny
+# ── Landlock compatibility ────────────────────────────────────────────────────
+landlock:
+  # best_effort: sandbox still starts on kernels without Landlock (graceful degradation)
+  # hard_requirement: refuse to start if kernel lacks Landlock support
+  compatibility: best_effort
 
-# ── Filesystem ───────────────────────────────────────────────────────────────
-filesystem:
-  allow:
-    # Hermes memories, skills, and config — must be writable
-    - path: /root/.hermes
-      permissions: [read, write, execute]
+# ── Process isolation (STATIC, locked at creation) ────────────────────────────
+# Hermes runs as an unprivileged user — cannot escalate to root.
+process:
+  run_as_user: hermes
+  run_as_group: hermes
 
-    # Agent working directory — where Hermes creates and runs files
-    - path: /sandbox
-      permissions: [read, write, execute]
+# ── Network policies (OPA + HTTP CONNECT — HOT-RELOADABLE) ───────────────────
+# Named policies. The active policy can be swapped on a running sandbox with:
+#   openshell policy set hermesclaw-1 --policy openshell/hermesclaw-policy.yaml --wait
+#
+# Enforcement modes:
+#   enforce  — block requests that violate the policy, log the denial
+#   audit    — allow all requests, log violations (useful during onboarding)
+#
+# Access levels:
+#   read-only   — GET, HEAD, OPTIONS only
+#   read-write  — GET + POST/PUT/PATCH
+#   full        — all HTTP methods
+network_policies:
 
-    # Temporary files
-    - path: /tmp
-      permissions: [read, write, execute]
+  # ── Inference: allow Hermes to call the LLM ─────────────────────────────────
+  # OpenShell intercepts calls to inference.local and routes them to the
+  # configured inference endpoint (llama.cpp on the host, or any OpenAI-compatible API).
+  # Credentials are stripped from the request and backend credentials are injected.
+  inference_local:
+    endpoints:
+      - host: "inference.local"
+        port: 443
+        enforcement: enforce
+        access: full
+        rules:
+          - method: "POST"
+            path: "/v1/chat/completions"
+          - method: "POST"
+            path: "/v1/completions"
+          - method: "POST"
+            path: "/v1/embeddings"
+          - method: "GET"
+            path: "/v1/models"
+      - host: "inference.local"
+        port: 80
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: "/root/.local/bin/hermes*"
+      - path: "/usr/bin/python3*"
 
-    # Read-only system paths needed for Python/Hermes to run
-    - path: /usr
-      permissions: [read, execute]
-    - path: /lib
-      permissions: [read, execute]
-    - path: /lib64
-      permissions: [read, execute]
-    - path: /bin
-      permissions: [read, execute]
+  # ── Hermes gateway: allow Telegram API (uncomment to enable) ─────────────────
+  # Required for: hermes gateway (Telegram bot)
+  # telegram:
+  #   endpoints:
+  #     - host: "api.telegram.org"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: full
+  #   binaries:
+  #     - path: "/root/.local/bin/hermes*"
 
-  # Deny everything not explicitly allowed.
-  # The host filesystem, credentials, and other processes are invisible.
-  default: deny
+  # ── Hermes gateway: allow Discord API (uncomment to enable) ──────────────────
+  # discord:
+  #   endpoints:
+  #     - host: "discord.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: full
+  #     - host: "gateway.discord.gg"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: full
+  #   binaries:
+  #     - path: "/root/.local/bin/hermes*"
 
-# ── Syscalls (seccomp) ────────────────────────────────────────────────────────
-syscalls:
-  # Block dangerous syscalls that could be used to escape the sandbox
-  # or spy on other processes. These are the same syscalls blocked by
-  # NemoClaw for OpenClaw.
-  deny:
-    - ptrace           # Cannot inspect other processes
-    - mount            # Cannot mount filesystems
-    - umount2          # Cannot unmount filesystems
-    - kexec_load       # Cannot load a new kernel
-    - perf_event_open  # Cannot access kernel performance counters
-    - process_vm_readv  # Cannot read another process's memory
-    - process_vm_writev # Cannot write to another process's memory
+  # ── Skills: allow Hermes to download/publish skills (uncomment to enable) ────
+  # Required for: hermes skills install, hermes skills search, skill auto-creation
+  # github_skills:
+  #   endpoints:
+  #     - host: "github.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: read-write
+  #     - host: "raw.githubusercontent.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: read-only
+  #     - host: "api.github.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: read-write
+  #   binaries:
+  #     - path: "/root/.local/bin/hermes*"
 
-  # Allow all other syscalls — Hermes needs standard POSIX syscalls to run.
-  default: allow
+  # ── Web search: allow Hermes web_search tool (uncomment to enable) ────────────
+  # Required for: hermes web_search tool, web_extract tool
+  # web_search:
+  #   endpoints:
+  #     - host: "html.duckduckgo.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: read-only
+  #     - host: "api.duckduckgo.com"
+  #       port: 443
+  #       enforcement: enforce
+  #       access: read-only
+  #   binaries:
+  #     - path: "/root/.local/bin/hermes*"

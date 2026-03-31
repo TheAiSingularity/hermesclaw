@@ -1,66 +1,99 @@
 # HermesClaw — OpenShell Sandbox Profile
 #
-# Defines the container, resource limits, inference routing, and mounts
-# for the HermesClaw sandbox.
+# A profile bundles a container image + policy + inference routing + mounts
+# into a reusable template. Register once, create sandboxes from it as needed.
 #
-# Register with:
+# NOTE: This profile format is a reference template for documentation purposes.
+# The authoritative way to create HermesClaw sandboxes is via the CLI:
+#
+#   # Register this profile
 #   openshell profile register openshell/hermesclaw-profile.yaml
 #
-# Start the sandbox:
-#   openshell sandbox create --profile hermesclaw --name hermesclaw-1
+#   # Create a sandbox from the profile
+#   openshell sandbox create --from hermesclaw --name hermesclaw-1
 #
-# Reference: https://docs.nvidia.com/openshell/latest/reference/profile.html
+#   # Or create ad-hoc with policy and all flags
+#   openshell sandbox create \
+#     --policy openshell/hermesclaw-policy.yaml \
+#     --name hermesclaw-1 \
+#     -- hermes gateway
+#
+# Reference: https://docs.nvidia.com/openshell/latest/sandboxes/manage-sandboxes.html
 
-apiVersion: openshell/v1
-kind: SandboxProfile
+# ── Identity ──────────────────────────────────────────────────────────────────
+name: hermesclaw
+description: "Hermes Agent (NousResearch) in NVIDIA OpenShell — world's first HermesClaw sandbox"
 
-metadata:
-  name: hermesclaw
-  description: "Hermes Agent running inside NVIDIA OpenShell — world's first HermesClaw sandbox"
-
-# ── Container ────────────────────────────────────────────────────────────────
+# ── Container ─────────────────────────────────────────────────────────────────
 container:
-  image: hermesclaw:latest       # Built from Dockerfile in this repo
-  command: ["hermes", "gateway"] # Starts Hermes gateway for Telegram/Signal/etc.
+  image: hermesclaw:latest          # Built from Dockerfile in this repo
+  command: ["hermes", "gateway"]    # Long-running mode: Telegram / Signal / Discord
+  # Override for one-shot mode:
+  # command: ["hermes", "chat", "-q", "hello"]
 
-# ── Policy reference ─────────────────────────────────────────────────────────
-policy: hermesclaw               # References hermesclaw-policy.yaml
+# ── Policy ────────────────────────────────────────────────────────────────────
+policy: openshell/hermesclaw-policy.yaml   # Filesystem + network + process rules
 
-# ── Resources ────────────────────────────────────────────────────────────────
+# ── Resources ─────────────────────────────────────────────────────────────────
 resources:
-  cpu: "2"
-  memory: "2Gi"
+  cpu: "2"                          # CPU cores allocated to the sandbox
+  memory: "2Gi"                     # RAM limit
 
-# ── Inference routing ────────────────────────────────────────────────────────
-# OpenShell intercepts calls to inference.local inside the container and
-# routes them to this endpoint on the host. This is the same mechanism
-# NemoClaw uses for OpenClaw.
+# ── GPU passthrough (optional) ───────────────────────────────────────────────
+# Uncomment to pass host NVIDIA GPUs into the sandbox.
+# Requires: NVIDIA drivers + NVIDIA Container Toolkit on host.
+# Use when: running llama.cpp or other GPU inference inside the container.
+#
+# gpu: true
+
+# ── Inference routing ─────────────────────────────────────────────────────────
+# OpenShell intercepts calls to https://inference.local inside the sandbox
+# and routes them to this endpoint (credentials are managed by OpenShell,
+# not exposed to the agent).
+#
+# The agent only ever sees: https://inference.local/v1/chat/completions
+# OpenShell routes that to whichever backend is configured here.
+#
+# Switch providers live (hot-reload, no restart):
+#   openshell inference set --provider local-llama --model qwen3-4b
+#   openshell inference set --provider nvidia-prod --model nemotron-4-340b
+#   openshell inference set --provider anthropic-prod --model claude-sonnet-4-6
 inference:
+  # Local llama.cpp (default, no API key needed)
   provider: local
-  endpoint: "http://127.0.0.1:8080/v1"   # llama.cpp on the host
+  endpoint: "http://127.0.0.1:8080/v1"
 
-# ── Filesystem mounts ────────────────────────────────────────────────────────
+  # Alternatives — configure via openshell provider create, then reference here:
+  # provider: nvidia                # NVIDIA API Catalog (Nemotron models)
+  # provider: openai                # OpenAI
+  # provider: anthropic             # Anthropic Claude
+  # provider: ollama                # Local Ollama (http://host.openshell.internal:11434/v1)
+  # provider: vllm                  # Local vLLM
+
+# ── Filesystem mounts ─────────────────────────────────────────────────────────
 mounts:
-  # Hermes memories and skills — host path so they're accessible outside the sandbox
-  - hostPath: ~/.hermes
-    containerPath: /root/.hermes
+  # Hermes memories, skills, auth — persisted on the host so they survive sandbox recreation
+  - hostPath: "~/.hermes"
+    containerPath: "/root/.hermes"
 
-  # User's knowledge docs for RAG (read-only inside sandbox)
-  - hostPath: ./knowledge
-    containerPath: /sandbox/knowledge
+  # User knowledge documents — mounted read-only for RAG / context
+  - hostPath: "./knowledge"
+    containerPath: "/sandbox/knowledge"
     readOnly: true
 
-  # User's persona config (read-only)
-  - hostPath: ./configs
-    containerPath: /sandbox/configs
+  # Persona + config files
+  - hostPath: "./configs"
+    containerPath: "/sandbox/configs"
     readOnly: true
 
-# ── Environment variables ────────────────────────────────────────────────────
+# ── Environment variables ──────────────────────────────────────────────────────
 env:
-  # Point Hermes at OpenShell's inference router instead of a direct URL.
-  # Inside the sandbox, all LLM calls go through inference.local which
-  # routes them to the host's llama.cpp via the inference.endpoint above.
+  # Tell Hermes to use the OpenShell inference router.
+  # All LLM calls inside the sandbox go through inference.local.
+  # OpenShell strips the agent's credentials and injects the managed backend credentials.
   - name: OPENAI_BASE_URL
     value: "http://inference.local/v1"
   - name: OPENAI_API_KEY
-    value: "not-needed"
+    value: "not-needed"           # OpenShell manages credentials — this is intentionally empty
+  - name: HERMES_HOME
+    value: "/root/.hermes"
