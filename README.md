@@ -19,26 +19,9 @@ HermesClaw puts Hermes inside OpenShell. The agent gets its full capability stac
 
 ## Architecture
 
-```
-User (Telegram / Signal / Discord / Slack / WhatsApp / Email / CLI)
-         │
-         ▼
-  ┌─────────────────────────────────────────────────────┐
-  │         Hermes Agent (NousResearch)                  │
-  │  40+ tools · memory · skills · gateway · voice       │
-  │  ┌─────────────────────────────────────────────┐    │
-  │  │        OpenShell Sandbox (NVIDIA)            │    │
-  │  │  Network:  inference.local only (OPA proxy)  │    │
-  │  │  FS:       ~/.hermes/ + /sandbox/ (Landlock) │    │
-  │  │  Process:  non-root, Seccomp BPF             │    │
-  │  │  Inference: credential stripping + injection │    │
-  │  └─────────────────────────────────────────────┘    │
-  └─────────────────────────────────────────────────────┘
-         │  OpenShell privacy router intercepts
-         │  inference.local calls and routes to:
-         ▼
-  llama.cpp (local, Metal/CUDA)  OR  NVIDIA API  OR  OpenAI  OR  Anthropic
-```
+<p align="center">
+  <img src="assets/architecture.png" alt="HermesClaw Architecture" width="780">
+</p>
 
 OpenShell intercepts every call to `inference.local` inside the sandbox and routes it to the configured backend. Hermes never knows it's sandboxed.
 
