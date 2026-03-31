@@ -2,6 +2,13 @@
   <img src="assets/banner.png" alt="HermesClaw" width="100%">
 </p>
 
+<p align="center">
+  <a href="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml"><img src="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-orange.svg" alt="Version"></a>
+</p>
+
 **Hermes Agent sandboxed by NVIDIA OpenShell.**
 
 NVIDIA built OpenShell to hardware-enforce AI agent behavior — blocking network egress, filesystem writes, and dangerous syscalls at the kernel level. They demonstrated it with Claude Code, Codex, and Cursor. They used it to build NemoClaw (OpenClaw + OpenShell). **Nobody had done it for Hermes Agent — until now.**
@@ -254,6 +261,29 @@ hermesclaw/
 ├── models/                            # Drop .gguf model weights here
 └── knowledge/                         # Drop documents here (mounted read-only as RAG context)
 ```
+
+---
+
+## Contributing
+
+HermesClaw is open to contributions from the community — especially:
+
+- **OpenShell policy corrections** — if you have access to a real OpenShell environment, correctness fixes are the highest-value contribution
+- **New policy presets** — homeassistant, coding, research, etc.
+- **New gateway platform policies** — Slack, WhatsApp, Signal network rules
+- **Real-world test reports** — if you've run HermesClaw on NVIDIA hardware, share your `./scripts/doctor.sh` output
+
+**Quick contributor setup:**
+
+```bash
+git clone https://github.com/TheAiSingularity/hermesclaw
+cd hermesclaw
+./scripts/doctor.sh --quick    # verify your environment
+./scripts/test.sh --quick      # run the feature test suite
+shellcheck scripts/hermesclaw  # lint before submitting
+```
+
+Full guide: [CONTRIBUTING.md](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md)
 
 ---
 

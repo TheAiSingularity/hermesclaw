@@ -1,6 +1,6 @@
 # HermesClaw × NemoClaw — Feature Comparison & Test Results
 
-*Generated: 2026-03-31 10:59*
+*Generated: 2026-03-31 11:12*
 *Run `./scripts/test.sh` to refresh.*
 
 ## Legend

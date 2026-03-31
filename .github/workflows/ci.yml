@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Validate all YAML files ──────────────────────────────────────────────
+  validate-yaml:
+    name: Validate YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate all YAML files
+        run: |
+          python3 - <<'EOF'
+          import yaml, sys, glob, os
+
+          files = glob.glob("**/*.yaml", recursive=True) + glob.glob("**/*.yml", recursive=True)
+          # Exclude .github/workflows themselves from strict validation (GitHub Actions schema is different)
+          files = [f for f in files if not f.startswith(".github/workflows/")]
+
+          errors = []
+          for f in sorted(files):
+              try:
+                  yaml.safe_load(open(f))
+                  print(f"  OK   {f}")
+              except yaml.YAMLError as e:
+                  print(f"  ERR  {f}: {e}")
+                  errors.append(f)
+
+          if errors:
+              print(f"\n{len(errors)} file(s) failed YAML validation.")
+              sys.exit(1)
+          else:
+              print(f"\n{len(files)} file(s) validated successfully.")
+          EOF
+
+  # ── 2. Lint shell scripts ────────────────────────────────────────────────────
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          shellcheck \
+            scripts/hermesclaw \
+            scripts/setup.sh \
+            scripts/start.sh \
+            scripts/status.sh \
+            scripts/doctor.sh \
+            scripts/test.sh
+
+  # ── 3. Run the feature test suite ───────────────────────────────────────────
+  test-suite:
+    name: Feature Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y curl jq
+
+      - name: Run test suite (quick mode)
+        run: |
+          bash scripts/test.sh --quick
+          echo ""
+          echo "--- Generated test-results.md ---"
+          cat docs/test-results.md
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: docs/test-results.md
+
+  # ── 4. Run diagnostics ───────────────────────────────────────────────────────
+  doctor:
+    name: Doctor (quick)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y curl jq
+          # Install Docker CLI (daemon already running in GitHub Actions)
+          docker --version
+
+      - name: Run doctor (quick mode)
+        run: bash scripts/doctor.sh --quick
+
+  # ── 5. Docker build check ────────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    # Only run on push to main or PRs that touch Docker-related files
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.changed_files, 'Dockerfile') ||
+        contains(github.event.pull_request.changed_files, 'docker-compose.yml')
+      ))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build hermesclaw image
+        run: |
+          docker build -t hermesclaw:latest .
+          echo "Image built successfully"
+          docker image inspect hermesclaw:latest --format "Size: {{.Size}} bytes"
+
+      - name: Validate docker-compose config
+        run: docker compose config --quiet
+
+      - name: Verify Hermes is installed in image
+        run: |
+          docker run --rm hermesclaw:latest hermes version
+          docker run --rm hermesclaw:latest hermes --help | head -5
+
+  # ── 6. Check .env.example completeness ──────────────────────────────────────
+  env-completeness:
+    name: .env.example completeness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check all compose env vars are documented
+        run: |
+          python3 - <<'EOF'
+          import re, sys
+
+          # Extract env var names referenced in docker-compose.yml
+          with open("docker-compose.yml") as f:
+              compose = f.read()
+          # Match ${VAR_NAME:-...} and ${VAR_NAME} patterns
+          compose_vars = set(re.findall(r'\$\{([A-Z_][A-Z0-9_]*)[}:]', compose))
+
+          # Extract documented vars in .env.example
+          with open(".env.example") as f:
+              example = f.read()
+          example_vars = set(re.findall(r'^([A-Z_][A-Z0-9_]*)=', example, re.MULTILINE))
+
+          missing = compose_vars - example_vars
+          if missing:
+              print(f"Variables in docker-compose.yml not documented in .env.example:")
+              for v in sorted(missing):
+                  print(f"  {v}")
+              sys.exit(1)
+          else:
+              print(f"All {len(compose_vars)} compose variables are documented in .env.example")
+          EOF

@@ -119,19 +119,32 @@ fi
 
 # 6. llama.cpp /v1/models
 if ! $QUICK; then
-    MODELS=$(curl -sf http://127.0.0.1:8080/v1/models 2>/dev/null | python3 -c "
+    MODELS_JSON=$(curl -sf http://127.0.0.1:8080/v1/models 2>/dev/null || true)
+    if [ -n "$MODELS_JSON" ]; then
+        # Parse JSON: prefer jq (fast), fall back to python3, fall back to grep
+        if _has jq; then
+            MODELS=$(echo "$MODELS_JSON" | jq -r '[.data[].id] | .[0:3] | join(", ")' 2>/dev/null || echo "")
+        elif _has python3; then
+            MODELS=$(echo "$MODELS_JSON" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     ids = [m['id'] for m in d.get('data', [])]
     print(', '.join(ids[:3]))
-except:
+except Exception:
     print('')
-" 2>/dev/null)
-    if [ -n "$MODELS" ]; then
-        record "PASS" "llama.cpp models endpoint" "$MODELS"
+" 2>/dev/null || echo "")
+        else
+            # Fallback: crude grep for id fields
+            MODELS=$(echo "$MODELS_JSON" | grep -o '"id":"[^"]*"' | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//' || echo "")
+        fi
+        if [ -n "$MODELS" ]; then
+            record "PASS" "llama.cpp models endpoint" "$MODELS"
+        else
+            record "WARN" "llama.cpp models endpoint" "responded but no models listed"
+        fi
     else
-        record "WARN" "llama.cpp models endpoint" "no models listed (llama.cpp not running?)"
+        record "WARN" "llama.cpp models endpoint" "no response (llama.cpp not running?)"
     fi
 fi
 

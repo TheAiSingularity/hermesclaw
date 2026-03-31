@@ -32,7 +32,7 @@ services:
   # CPU-only mode (default) — works everywhere, no NVIDIA hardware needed
   llama-server:
     image: ghcr.io/ggerganov/llama.cpp:server
-    container_name: llama-server
+    container_name: llama-server-cpu
     profiles: ["default", ""]
     ports:
       - "${LLAMA_PORT:-8080}:8080"
@@ -55,9 +55,13 @@ services:
   # ── llama.cpp inference server (GPU variant) ─────────────────────────────────
   # NVIDIA GPU mode — requires NVIDIA Container Toolkit
   # Activate: docker compose --profile gpu up
+  #
+  # NOTE: This and the CPU variant share the same service name "llama-server"
+  # (used by the hermesclaw service via Docker DNS) but have distinct container
+  # names so they cannot run simultaneously. The profiles are mutually exclusive.
   llama-server-gpu:
     image: ghcr.io/ggerganov/llama.cpp:server-cuda
-    container_name: llama-server
+    container_name: llama-server-gpu
     profiles: ["gpu"]
     ports:
       - "${LLAMA_PORT:-8080}:8080"

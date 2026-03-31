@@ -178,7 +178,7 @@ cmd_onboard() {
 
 cmd_start() {
     local gpu_flag=""
-    local policy_preset="default"
+    local policy_preset="strict"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -432,10 +432,9 @@ cmd_chat() {
     fi
 
     if _has openshell && _sandbox_running; then
-        # Run inside the sandbox
-        openshell sandbox upload "$SANDBOX_NAME" /dev/stdin /tmp/_hc_prompt.txt <<< "$prompt"
-        openshell sandbox connect "$SANDBOX_NAME" -- \
-            hermes chat -q "$(cat /tmp/_hc_prompt.txt)"
+        # Run inside the sandbox — pass prompt via env to avoid shell quoting issues
+        HERMESCLAW_PROMPT="$prompt" openshell sandbox connect "$SANDBOX_NAME" -- \
+            bash -c 'hermes chat -q "$HERMESCLAW_PROMPT"'
     elif _has docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
         # Run in the Docker container
         docker exec hermesclaw hermes chat -q "$prompt"
