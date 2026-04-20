@@ -1,6 +1,6 @@
 # HermesClaw × NemoClaw — Feature Comparison & Test Results
 
-*Generated: 2026-03-31 11:49*
+*Generated: 2026-04-01 00:57*
 *Run `./scripts/test.sh` to refresh.*
 
 ## Legend
@@ -123,7 +123,7 @@
 
 | Test | Status |
 |------|--------|
-| llama.cpp health check | ⏭ skipped (--quick) |
+| llama.cpp health check | ✅ responding |
 | hermes chat (container) | ⏭ skipped (--quick) |
 | hermes memory (container) | ⏭ skipped (--quick) |
 | hermes skills (container) | ⏭ skipped (--quick) |

@@ -1,173 +1,76 @@
-# HermesClaw — OpenShell Sandbox Policy
+# ─────────────────────────────────────────────────────────────────────────────
+# HermesClaw — Default Baseline Policy
+# ─────────────────────────────────────────────────────────────────────────────
+# This is the default policy loaded by HermesClaw when no explicit --policy
+# flag is given. It is functionally identical to policy-strict.yaml:
 #
-# Enforced at the kernel level via:
-#   Landlock LSM    — filesystem isolation (locked at sandbox creation)
-#   Seccomp BPF     — syscall filtering    (locked at sandbox creation)
-#   OPA + HTTP CONNECT proxy — network egress control (hot-reloadable)
+#   INFERENCE ONLY — the hermes binary may talk to inference.local only.
+#   No messaging gateways, no web access, no GitHub, no HuggingFace.
 #
-# Apply to a running sandbox:
+# Use this policy when:
+#   - Running HermesClaw for the first time (safe default).
+#   - You only need LLM inference and local tools (filesystem, bash, etc).
+#   - You want the tightest possible egress surface.
+#
+# WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
+# change field names without verifying against
+# `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
+# HermesClaw v0.3.0 shipped an invented schema (access_level, landlock.enabled,
+# protocol: https, rest: blocks) that OpenShell rejects. This file uses the
+# real schema.
+#
+# Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/hermesclaw-policy.yaml --wait
-#
-# Create sandbox with this policy:
-#   openshell sandbox create --policy openshell/hermesclaw-policy.yaml -- hermes gateway
-#
-# Reference: https://docs.nvidia.com/openshell/latest/reference/policy-schema.html
+# ─────────────────────────────────────────────────────────────────────────────
 
 version: 1
 
-# ── Filesystem (Landlock LSM — STATIC, locked at creation) ───────────────────
-# Changes require destroying and recreating the sandbox.
 filesystem_policy:
-  include_workdir: true         # Auto-include the agent's working directory (/sandbox)
-
+  include_workdir: true
   read_only:
-    - /usr                      # System binaries and libraries
-    - /lib                      # Shared libraries
-    - /lib64                    # 64-bit shared libraries
-    - /bin                      # Core executables
-    - /etc/ssl                  # TLS certificates (needed for HTTPS to inference.local)
-    - /etc/resolv.conf          # DNS resolution
-    - /etc/passwd               # User ID lookup
-    - /etc/group                # Group ID lookup
-    - /sandbox/knowledge        # User docs (mounted read-only from host)
-    - /sandbox/configs          # Persona + hermes config (mounted read-only from host)
-
+    - /usr
+    - /lib
+    - /lib64
+    - /bin
+    - /etc/ssl
+    - /etc/resolv.conf
+    - /etc/passwd
+    - /etc/group
+    - /sandbox/knowledge     # user knowledge docs (mounted ro)
+    - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /root/.hermes             # Hermes memories, skills, config, auth tokens
-    - /sandbox                  # Agent working directory (code, output, tasks)
-    - /tmp                      # Temporary files
+    - /root/.hermes          # Hermes memories, skills, auth
+    - /sandbox               # agent working directory
+    - /tmp
 
-# ── Landlock compatibility ────────────────────────────────────────────────────
 landlock:
-  # enabled: true means Landlock is required; the sandbox will fail to start
-  # on kernels that do not support Landlock (Linux 5.13+).
-  enabled: true
+  compatibility: best_effort
 
-# ── Process isolation (STATIC, locked at creation) ────────────────────────────
-# Hermes runs as an unprivileged user — cannot escalate to root.
 process:
-  user: hermes
-  group: hermes
+  run_as_user: sandbox
+  run_as_group: sandbox
 
-# ── Network policies (OPA + HTTP CONNECT — HOT-RELOADABLE) ───────────────────
-# Named policies. The active policy can be swapped on a running sandbox with:
-#   openshell policy set hermesclaw-1 --policy openshell/hermesclaw-policy.yaml --wait
-#
-# Each named section under network_policies defines:
-#   binaries   — which executables the rule applies to (glob patterns)
-#   endpoints  — allowed outbound destinations
-#     host     — hostname or IP
-#     port     — TCP port
-#     protocol — http | https
-#     tls      — required | optional (for https endpoints)
-#     rest     — optional: restrict to specific HTTP method + path combinations
-#       method      — GET | POST | PUT | PATCH | DELETE
-#       path        — path pattern (glob)
-#       access_level — read-only | read-write
-#
 network_policies:
-
-  # ── Inference: allow Hermes to call the LLM ─────────────────────────────────
-  # OpenShell intercepts calls to inference.local and routes them to the
-  # configured inference endpoint (llama.cpp on the host, or any OpenAI-compatible API).
-  # Credentials are stripped from the request and backend credentials are injected.
+  # ── OpenShell inference router ─────────────────────────────────────────
+  # `inference.local` is the NVIDIA OpenShell in-cluster inference endpoint.
+  # Both 443 (TLS) and 80 (plaintext) are allowed because the router may be
+  # exposed on either depending on the OpenShell deployment topology.
   inference_local:
-    binaries:
-      - "/root/.local/bin/hermes*"
-      - "/usr/bin/python3*"
+    name: inference_local
     endpoints:
-      - host: "inference.local"
+      - host: inference.local
         port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "POST"
-            path: "/v1/chat/completions"
-            access_level: read-write
-          - method: "POST"
-            path: "/v1/completions"
-            access_level: read-write
-          - method: "POST"
-            path: "/v1/embeddings"
-            access_level: read-write
-          - method: "GET"
-            path: "/v1/models"
-            access_level: read-only
-      - host: "inference.local"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+      - host: inference.local
         port: 80
-        protocol: http
-
-  # ── Hermes gateway: allow Telegram API (uncomment to enable) ─────────────────
-  # Required for: hermes gateway (Telegram bot)
-  # telegram:
-  #   binaries:
-  #     - "/root/.local/bin/hermes*"
-  #   endpoints:
-  #     - host: "api.telegram.org"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-
-  # ── Hermes gateway: allow Discord API (uncomment to enable) ──────────────────
-  # discord:
-  #   binaries:
-  #     - "/root/.local/bin/hermes*"
-  #   endpoints:
-  #     - host: "discord.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #     - host: "gateway.discord.gg"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-
-  # ── Skills: allow Hermes to download/publish skills (uncomment to enable) ────
-  # Required for: hermes skills install, hermes skills search, skill auto-creation
-  # github_skills:
-  #   binaries:
-  #     - "/root/.local/bin/hermes*"
-  #   endpoints:
-  #     - host: "github.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #     - host: "raw.githubusercontent.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #       rest:
-  #         - method: "GET"
-  #           path: "/*"
-  #           access_level: read-only
-  #     - host: "api.github.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #       rest:
-  #         - method: "GET"
-  #           path: "/*"
-  #           access_level: read-only
-
-  # ── Web search: allow Hermes web_search tool (uncomment to enable) ────────────
-  # Required for: hermes web_search tool, web_extract tool
-  # web_search:
-  #   binaries:
-  #     - "/root/.local/bin/hermes*"
-  #   endpoints:
-  #     - host: "html.duckduckgo.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #       rest:
-  #         - method: "GET"
-  #           path: "/*"
-  #           access_level: read-only
-  #     - host: "api.duckduckgo.com"
-  #       port: 443
-  #       protocol: https
-  #       tls: required
-  #       rest:
-  #         - method: "GET"
-  #           path: "/*"
-  #           access_level: read-only
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }

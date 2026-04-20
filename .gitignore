@@ -26,3 +26,6 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# Promotion content (personal, not for the repo)
+docs/promotion.md

@@ -27,7 +27,7 @@ fi
 if command -v openshell &>/dev/null; then
     echo ""
     echo "OpenShell sandbox:"
-    openshell sandbox status hermesclaw-1 2>/dev/null || echo -e "  ${YELLOW}hermesclaw-1 not running${RESET}"
+    openshell sandbox get hermesclaw-1 2>/dev/null || echo -e "  ${YELLOW}hermesclaw-1 not running${RESET}"
 else
     echo ""
     echo "Docker services:"

@@ -70,6 +70,11 @@ services:
       HERMES_PRIVACY_THRESHOLD: "${HERMES_PRIVACY_THRESHOLD:-0.0}"
       # Approval mode: manual | smart | off
       HERMES_APPROVAL_MODE: "${HERMES_APPROVAL_MODE:-smart}"
+    # host.docker.internal does not resolve on native Linux Docker by default.
+    # This makes it route to the host gateway so `llama-server` on the host is reachable
+    # from inside the container on both macOS/Windows (Docker Desktop) and Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Persist Hermes memories across container restarts
       - hermesclaw-memories:/root/.hermes/memories

@@ -1,13 +1,26 @@
-# HermesClaw — STRICT policy preset
+# ─────────────────────────────────────────────────────────────────────────────
+# HermesClaw — STRICT Policy (inference only, most secure)
+# ─────────────────────────────────────────────────────────────────────────────
+# STRICT = inference only. The hermes binary may reach ONLY the OpenShell
+# in-cluster inference router at `inference.local`. No messaging gateways,
+# no web access, no third-party APIs, no package registries.
 #
-# Maximum security. Hermes can only:
-#   - Call the local LLM via inference.local
-#   - Read/write ~/.hermes and /sandbox
-#   - No internet, no gateway, no skills download
+# Use this policy when:
+#   - Running untrusted prompts or autonomous agent loops.
+#   - You want a provable "no data exfiltration" posture.
+#   - You don't need Telegram/Discord/Slack notifications.
+#   - You're shipping HermesClaw to an air-gapped or compliance-sensitive env.
 #
-# Use when: running Hermes as a pure local assistant with no external connectivity.
+# This is the most secure tier. If hermes needs messaging, use policy-gateway.
+# If it needs web/GitHub/HuggingFace, use policy-permissive.
 #
-# Apply: openshell policy set hermesclaw-1 --policy openshell/policy-strict.yaml --wait
+# WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
+# change field names without verifying against
+# `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
+#
+# Apply with:
+#   openshell policy set hermesclaw-1 --policy openshell/policy-strict.yaml --wait
+# ─────────────────────────────────────────────────────────────────────────────
 
 version: 1
 
@@ -22,43 +35,41 @@ filesystem_policy:
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
-    - /sandbox/knowledge
-    - /sandbox/configs
+    - /sandbox/knowledge     # user knowledge docs (mounted ro)
+    - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /root/.hermes
-    - /sandbox
+    - /root/.hermes          # Hermes memories, skills, auth
+    - /sandbox               # agent working directory
     - /tmp
 
 landlock:
-  enabled: true
+  compatibility: best_effort
 
 process:
-  user: hermes
-  group: hermes
+  run_as_user: sandbox
+  run_as_group: sandbox
 
 network_policies:
-  inference_only:
-    binaries:
-      - "/root/.local/bin/hermes*"
-      - "/usr/bin/python3*"
+  # ── OpenShell inference router ─────────────────────────────────────────
+  # `inference.local` is the NVIDIA OpenShell in-cluster inference endpoint.
+  # Both 443 (TLS) and 80 (plaintext) are allowed because the router may be
+  # exposed on either depending on the OpenShell deployment topology.
+  inference_local:
+    name: inference_local
     endpoints:
-      - host: "inference.local"
+      - host: inference.local
         port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "POST"
-            path: "/v1/chat/completions"
-            access_level: read-write
-          - method: "POST"
-            path: "/v1/completions"
-            access_level: read-write
-          - method: "POST"
-            path: "/v1/embeddings"
-            access_level: read-write
-          - method: "GET"
-            path: "/v1/models"
-            access_level: read-only
-      - host: "inference.local"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+      - host: inference.local
         port: 80
-        protocol: http
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }

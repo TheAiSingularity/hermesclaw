@@ -1,15 +1,30 @@
-# HermesClaw — GATEWAY policy preset
+# ─────────────────────────────────────────────────────────────────────────────
+# HermesClaw — GATEWAY Policy (inference + Telegram + Discord messaging)
+# ─────────────────────────────────────────────────────────────────────────────
+# GATEWAY = inference + messaging. Adds Telegram Bot API and Discord
+# (REST, gateway, CDN, media) on top of the strict inference-only baseline.
+# Designed for agents that act as chat-driven assistants or relay
+# notifications to human operators.
 #
-# Enables messaging gateway (Telegram + Discord + Signal).
-# Hermes can:
-#   - Call the local LLM via inference.local
-#   - Post/receive Telegram messages
-#   - Post/receive Discord messages
-#   - No web search, no skills download
+# Use this policy when:
+#   - HermesClaw is running as a Telegram/Discord bot or watcher.
+#   - The agent needs to push status updates or accept commands from chat.
+#   - You do NOT want general web, GitHub, or HuggingFace access.
 #
-# Use when: running hermes gateway as a Telegram/Discord bot.
+# Still denies: Slack, web search, GitHub, HuggingFace, npm, pip, anything
+# not explicitly listed below.
 #
-# Apply: openshell policy set hermesclaw-1 --policy openshell/policy-gateway.yaml --wait
+# WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
+# change field names without verifying against
+# `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
+# Note: the NemoClaw presets bind messaging endpoints to `/usr/local/bin/node`
+# because OpenClaw is a Node.js app. Hermes is Python, so we bind to
+# `/root/.local/bin/hermes` instead — this is the ONLY intentional divergence
+# from the reference preset shape.
+#
+# Apply with:
+#   openshell policy set hermesclaw-1 --policy openshell/policy-gateway.yaml --wait
+# ─────────────────────────────────────────────────────────────────────────────
 
 version: 1
 
@@ -24,52 +39,94 @@ filesystem_policy:
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
-    - /sandbox/knowledge
-    - /sandbox/configs
+    - /sandbox/knowledge     # user knowledge docs (mounted ro)
+    - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /root/.hermes
-    - /sandbox
+    - /root/.hermes          # Hermes memories, skills, auth
+    - /sandbox               # agent working directory
     - /tmp
 
 landlock:
-  enabled: true
+  compatibility: best_effort
 
 process:
-  user: hermes
-  group: hermes
+  run_as_user: sandbox
+  run_as_group: sandbox
 
 network_policies:
+  # ── OpenShell inference router ─────────────────────────────────────────
   inference_local:
-    binaries:
-      - "/root/.local/bin/hermes*"
-      - "/usr/bin/python3*"
+    name: inference_local
     endpoints:
-      - host: "inference.local"
+      - host: inference.local
         port: 443
-        protocol: https
-        tls: required
-      - host: "inference.local"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+      - host: inference.local
         port: 80
-        protocol: http
-
-  telegram_gateway:
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
     binaries:
-      - "/root/.local/bin/hermes*"
-    endpoints:
-      - host: "api.telegram.org"
-        port: 443
-        protocol: https
-        tls: required
+      - { path: /root/.local/bin/hermes }
 
-  discord_gateway:
-    binaries:
-      - "/root/.local/bin/hermes*"
+  # ── Telegram Bot API ───────────────────────────────────────────────────
+  # Modeled on nemoclaw-blueprint/policies/presets/telegram.yaml.
+  # Binary bound to hermes (Python) instead of node.
+  telegram:
+    name: telegram
     endpoints:
-      - host: "discord.com"
+      - host: api.telegram.org
         port: 443
-        protocol: https
-        tls: required
-      - host: "gateway.discord.gg"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/bot*/**" }
+          - allow: { method: POST, path: "/bot*/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }
+
+  # ── Discord API + gateway + CDN ────────────────────────────────────────
+  # Modeled on nemoclaw-blueprint/policies/presets/discord.yaml.
+  # gateway.discord.gg uses access: full (CONNECT tunnel) because the
+  # WebSocket gateway needs a long-lived connection that the REST proxy
+  # would kill via HTTP idle timeout. See NemoClaw #409.
+  discord:
+    name: discord
+    endpoints:
+      - host: discord.com
         port: 443
-        protocol: https
-        tls: required
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+      - host: gateway.discord.gg
+        port: 443
+        access: full
+      - host: cdn.discordapp.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+      - host: media.discordapp.net
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }

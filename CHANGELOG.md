@@ -13,10 +13,27 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.4.0] — Unreleased
+## [0.3.1] — 2026-04-21
+
+Consolidated release covering all work between v0.2.0 and today. Supersedes the unreleased v0.3.0 and v0.4.0 development labels, which never tagged a release — their content is folded in below.
+
+### Fixed
+- **OpenShell policy YAML schema (corrects v0.3.0 attempt)** — all 4 policy files (`hermesclaw-policy.yaml`, `policy-strict.yaml`, `policy-gateway.yaml`, `policy-permissive.yaml`) now match the authoritative NemoClaw v0.1.0 reference blueprint (`~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`). The v0.3.0 development work shipped an invented schema (`access_level`, `landlock.enabled`, `protocol: https`, `rest:` blocks, bare glob `binaries:`) that OpenShell rejects at parse time. v0.3.1 reverts to the real schema:
+  - `process.user/group` → `process.run_as_user/run_as_group`
+  - `landlock.enabled: true` → `landlock.compatibility: best_effort`
+  - Endpoint fields: restored `enforcement: enforce` + `tls: terminate` + explicit `protocol: rest` stanza
+  - REST rules: restored `rules:` with `{allow: {method: ..., path: ...}}` shape (not `rest:` + `access_level`)
+  - `binaries:` list items restored to `{path: "..."}` objects (not bare globs)
+  - Binary bound to `/root/.local/bin/hermes` throughout (Python), the one intentional divergence from the blueprint's Node-based `/usr/local/bin/node`.
+- **`scripts/setup.sh`** — now registers an OpenShell inference provider (`local-llama`) and inference route on first run (mirrors NVIDIA/NemoClaw's own `setup.sh`). Previously only built the Docker image. Skipped silently when OpenShell is absent.
+- **`scripts/setup.sh`** — bootstraps `.env` from `.env.example` on first run.
+- **`scripts/status.sh`** — `openshell sandbox status` → `openshell sandbox get` (the `status` verb was never a valid OpenShell CLI command).
+- **`docker-compose.yml`** — added `extra_hosts: host.docker.internal:host-gateway` so the container can reach a host-side `llama-server` on native Linux Docker. macOS/Windows Docker Desktop already maps this; Linux did not.
+- **`scripts/hermesclaw`** — version string bumped to `0.2.0` (was stuck at `0.1.0` despite being the v0.2.0 release; bumped again on this release).
 
 ### Added
-- **`docs/use-cases/`** — Seven end-to-end deployment guides, one per persona:
+- **`docs/kernel-sandbox.md`** — a grounded reference for what "kernel-level sandbox" means in HermesClaw: the four enforcement layers, what is actually configured in the YAMLs (not marketing), honest gaps (seccomp inherited from OpenShell rather than owned locally; Landlock is `best_effort`; WebSockets opaque to proxy; etc.), threat model, and a 15-item improvement roadmap.
+- **`docs/use-cases/`** — seven end-to-end deployment guides, one per persona:
   - `01-researcher/` — Docker + Telegram gateway + weekly arXiv digest cron
   - `02-developer/` — Docker + VS Code ACP integration + Git MCP
   - `03-home-automation/` — Docker + Home Assistant MCP + Telegram bot
@@ -24,59 +41,30 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `05-small-business/` — Docker + gateway policy + Slack support bot
   - `06-privacy-regulated/` — OpenShell sandbox + strict policy (HIPAA/legal/compliance)
   - `07-trader/` — Docker + Qwen-7B + Telegram market alerts
-  - `README.md` — Index with quick-picker table + NemoClaw compatibility matrix across all 7 use cases
-- **`skills/`** — Pre-built Hermes skills library (native SKILL.md format, installable in one command):
-  - `research-digest/` — Weekly arXiv + web paper digest to Telegram
-  - `code-review/` — Local code review using project conventions from memory
-  - `home-assistant/` — Natural language smart home control via HA MCP
-  - `anomaly-detection/` — Daily Postgres metric monitoring; flags > 2σ deviations
+  - `README.md` — index with quick-picker table + NemoClaw compatibility matrix across all 7 use cases
+- **`skills/`** — pre-built Hermes skills library (native SKILL.md format, installable in one command):
+  - `research-digest/` — weekly arXiv + web paper digest to Telegram
+  - `code-review/` — local code review using project conventions from memory
+  - `home-assistant/` — natural language smart home control via HA MCP
+  - `anomaly-detection/` — daily Postgres metric monitoring; flags > 2σ deviations
   - `slack-support/` — Slack support bot with knowledge base and escalation routing
-  - `market-alerts/` — Watchlist threshold monitoring with Telegram alerts
-- **`skills/install.sh`** — Interactive installer; copies skills to `~/.hermes/skills/`
-- **`skills/anomaly-detection/scripts/detect.py`** — Z-score anomaly computation helper (stdlib only)
-- **`skills/market-alerts/scripts/monitor.py`** — Price threshold comparison helper (stdlib only)
-- **`README.md`** — Added "Use Cases" and "Skills Library" sections with install commands
-
-### Changed (v0.4.0)
-- **NemoClaw comparison tables corrected** across all 7 use-case guides and README:
-  - Provider support: NemoClaw supports OpenAI, Anthropic, Gemini, NVIDIA NIM (not Nemotron-only)
-  - Tool count: OpenClaw (the agent NemoClaw wraps) has 25+ tools and messaging channels (not ~10)
-  - Telegram/Slack/Discord: NemoClaw/OpenClaw has native gateway support — corrected from "❌" to "✅"
-  - macOS local inference: NemoClaw has a confirmed DNS bug (issue #260) breaking local models on macOS — added as explicit caveat
-  - HermesClaw advantages clarified: persistent MEMORY.md/USER.md, self-improving skills (DSPy+GEPA), MCP server support, local inference on macOS
-
-### Added (Phase 1 — sequential comparison test infrastructure)
-- **`scripts/test-setup.sh`** — Environment verification: Docker check, model file copy, HermesClaw build/start, NemoClaw CLI check, port conflict detection, `docs/test-results-uc.md` template creation
-- **`scripts/test-uc-01.sh`** — Researcher use case test: memory write/recall, Telegram (manual), cron creation, research-digest skill — both HermesClaw and NemoClaw
-- **`scripts/test-uc-02.sh`** — Developer use case test: code review (SQL injection + division-by-zero detection), ACP server startup, VS Code connection (manual), code-review skill
-- **`scripts/test-uc-03.sh`** — Home automation test: HA MCP connection, natural language command, routine creation — gracefully skips if no HA instance reachable
-- **`scripts/test-uc-04.sh`** — Data analyst test: spins up Docker Postgres, seeds anomaly data, tests Postgres MCP, SQL queries, anomaly-detection skill, detect.py z-scores
-- **`scripts/test-uc-05.sh`** — Small business test: FAQ responses, escalation trigger, knowledge base loading, slack-support skill, Slack bot (manual)
-- **`scripts/test-uc-06.sh`** — Privacy-regulated test: document analysis, local inference confirmation, outbound blocking (Linux/OpenShell only), NemoClaw cloud routing documented as HIPAA-disqualifying
-- **`scripts/test-uc-07.sh`** — Trader test: watchlist memory, threshold checks, market-alerts skill, monitor.py, Telegram alerts (manual), **inference latency measurement** (3-run average, HermesClaw vs NemoClaw cloud)
-- All test scripts write results to `docs/test-results-uc.md` (created by test-setup.sh)
-
----
-
-## [0.3.0] — Unreleased
-
-### Fixed
-- **OpenShell policy YAML schema** — corrected all 5 policy files to match the authoritative OpenShell v1 schema:
-  - `process.run_as_user/run_as_group` → `process.user/group`
-  - `landlock.compatibility: best_effort` → `landlock.enabled: true`
-  - Endpoint format: replaced `enforcement`/`access` fields with `protocol`/`tls`
-  - REST rules: renamed `rules:` to `rest:`, added `access_level:` field per endpoint
-  - `binaries:` list items changed from `{path: "..."}` objects to bare glob strings
-- **`scripts/setup.sh`** — removed `openshell policy apply` (not a valid OpenShell CLI command); policies are passed by file path at sandbox creation time via `--policy` flag
-- **`scripts/status.sh`** — added missing `set -euo pipefail`
-- **`scripts/hermesclaw`** — version bumped to `0.2.0` (was `0.1.0` despite being the v0.2.0 release)
+  - `market-alerts/` — watchlist threshold monitoring with Telegram alerts
+- **`skills/install.sh`** — interactive installer; copies skills to `~/.hermes/skills/`.
+- **`skills/anomaly-detection/scripts/detect.py`** — z-score anomaly computation helper (stdlib only).
+- **`skills/market-alerts/scripts/monitor.py`** — price threshold comparison helper (stdlib only).
+- **`README.md`** — "Use Cases" and "Skills Library" sections with install commands; TOC; architecture image.
+- **Sequential comparison test infrastructure** — `scripts/test-setup.sh` + `test-uc-01.sh` through `test-uc-07.sh`, all writing results to `docs/test-results-uc.md`.
 
 ### Changed
-- **NemoClaw comparison** — corrected inference provider comparison: NemoClaw supports Nemotron via NVIDIA API only; does not support local llama.cpp, OpenAI, Anthropic, Ollama, or vLLM backends
-- **Branding** — removed "world's first" / "nobody had done it" language from README, CONTRIBUTING.md, CHANGELOG, and profile YAML; replaced with neutral description of this being a community implementation built on NVIDIA OpenShell and NousResearch Hermes Agent
-
-### Added
-- **Use cases** — two documented use cases in README demonstrating where Hermes capabilities add practical value beyond NemoClaw: persistent research assistant and local AI messaging gateway
+- **NemoClaw comparison tables corrected** across the README and all 7 use-case guides:
+  - Provider support: NemoClaw supports OpenAI, Anthropic, Gemini, NVIDIA NIM (not Nemotron-only).
+  - Tool count: OpenClaw (the agent NemoClaw wraps) has 25+ tools and messaging channels (not ~10).
+  - Telegram/Slack/Discord: NemoClaw/OpenClaw has native gateway support — corrected from "❌" to "✅".
+  - macOS local inference: NemoClaw has a confirmed DNS bug (issue #260) breaking local models on macOS — added as explicit caveat.
+  - HermesClaw advantages clarified: persistent MEMORY.md/USER.md, self-improving skills (DSPy+GEPA), MCP server support, local inference on macOS.
+- **Branding** — removed "world's first" / "nobody had done it" language from README, CONTRIBUTING.md, and profile YAML; replaced with a neutral description of this being a community implementation built on NVIDIA OpenShell and NousResearch Hermes Agent.
+- **`docs/test-results.md`** — regenerated 2026-04-01; llama.cpp health check now reports `✅ responding` (previously skipped on --quick).
+- **`.gitignore`** — excludes `docs/promotion.md` (personal promo content, not repo-appropriate).
 
 ---
 
@@ -131,6 +119,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TheAiSingularity/hermesclaw/releases/tag/v0.1.0

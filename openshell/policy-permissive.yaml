@@ -1,21 +1,30 @@
-# HermesClaw — PERMISSIVE policy preset
+# ─────────────────────────────────────────────────────────────────────────────
+# HermesClaw — PERMISSIVE Policy (inference + messaging + web + code hosts)
+# ─────────────────────────────────────────────────────────────────────────────
+# PERMISSIVE = inference + Telegram + Discord + Slack + HuggingFace + GitHub
+# + DuckDuckGo web search. This is the widest egress surface HermesClaw
+# ships with by default.
 #
-# Full capability: inference + all gateways + web search + skills download.
-# Hermes can:
-#   - Call the local LLM via inference.local
-#   - Post/receive Telegram, Discord, Slack messages
-#   - Run web_search and web_extract tools (DuckDuckGo)
-#   - Download skills from GitHub
-#   - Use MCP servers on localhost
+# Use this policy when:
+#   - You're developing / debugging HermesClaw and need full tooling.
+#   - The agent must clone repos, pull HF models, search the web, and
+#     message across multiple chat platforms.
+#   - You trust the prompts running inside the sandbox.
 #
-# Still blocked:
-#   - Arbitrary outbound connections (only approved hosts)
-#   - Filesystem outside ~/.hermes and /sandbox
-#   - Privileged syscalls
+# DO NOT use this for untrusted autonomous loops — any prompt injection
+# that convinces the agent to exfiltrate data has many egress paths here.
+# For locked-down deployments, use policy-strict.yaml or policy-gateway.yaml.
 #
-# Use when: you want the full Hermes toolset with sandbox safety net.
+# WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
+# change field names without verifying against
+# `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
+# Messaging endpoints are bound to `/root/.local/bin/hermes` (Python) instead
+# of `/usr/local/bin/node` — this is the only intentional divergence from the
+# NemoClaw preset shape.
 #
-# Apply: openshell policy set hermesclaw-1 --policy openshell/policy-permissive.yaml --wait
+# Apply with:
+#   openshell policy set hermesclaw-1 --policy openshell/policy-permissive.yaml --wait
+# ─────────────────────────────────────────────────────────────────────────────
 
 version: 1
 
@@ -30,111 +39,209 @@ filesystem_policy:
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
-    - /sandbox/knowledge
-    - /sandbox/configs
+    - /sandbox/knowledge     # user knowledge docs (mounted ro)
+    - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /root/.hermes
-    - /sandbox
+    - /root/.hermes          # Hermes memories, skills, auth
+    - /sandbox               # agent working directory
     - /tmp
 
 landlock:
-  enabled: true
+  compatibility: best_effort
 
 process:
-  user: hermes
-  group: hermes
+  run_as_user: sandbox
+  run_as_group: sandbox
 
 network_policies:
+  # ── OpenShell inference router ─────────────────────────────────────────
   inference_local:
-    binaries:
-      - "/root/.local/bin/hermes*"
-      - "/usr/bin/python3*"
+    name: inference_local
     endpoints:
-      - host: "inference.local"
+      - host: inference.local
         port: 443
-        protocol: https
-        tls: required
-      - host: "inference.local"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
+      - host: inference.local
         port: 80
-        protocol: http
-
-  telegram_gateway:
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: "*", path: "/**" }
     binaries:
-      - "/root/.local/bin/hermes*"
-    endpoints:
-      - host: "api.telegram.org"
-        port: 443
-        protocol: https
-        tls: required
+      - { path: /root/.local/bin/hermes }
 
-  discord_gateway:
+  # ── Telegram Bot API ───────────────────────────────────────────────────
+  telegram:
+    name: telegram
+    endpoints:
+      - host: api.telegram.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/bot*/**" }
+          - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - "/root/.local/bin/hermes*"
-    endpoints:
-      - host: "discord.com"
-        port: 443
-        protocol: https
-        tls: required
-      - host: "gateway.discord.gg"
-        port: 443
-        protocol: https
-        tls: required
+      - { path: /root/.local/bin/hermes }
 
-  slack_gateway:
+  # ── Discord ────────────────────────────────────────────────────────────
+  discord:
+    name: discord
+    endpoints:
+      - host: discord.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+      - host: gateway.discord.gg
+        port: 443
+        access: full
+      - host: cdn.discordapp.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+      - host: media.discordapp.net
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
     binaries:
-      - "/root/.local/bin/hermes*"
-    endpoints:
-      - host: "slack.com"
-        port: 443
-        protocol: https
-        tls: required
-      - host: "wss-primary.slack.com"
-        port: 443
-        protocol: https
-        tls: required
+      - { path: /root/.local/bin/hermes }
 
+  # ── Slack ──────────────────────────────────────────────────────────────
+  # Modeled on nemoclaw-blueprint/policies/presets/slack.yaml. Task spec
+  # only required slack.com:443 but we also include the api/hooks hosts
+  # that the NemoClaw preset ships, because slack.com alone is useless
+  # without them. Socket Mode WebSocket endpoints use access: full.
+  slack:
+    name: slack
+    endpoints:
+      - host: slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: api.slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: hooks.slack.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: wss-primary.slack.com
+        port: 443
+        access: full
+      - host: wss-backup.slack.com
+        port: 443
+        access: full
+    binaries:
+      - { path: /root/.local/bin/hermes }
+
+  # ── HuggingFace Hub / LFS / Inference ──────────────────────────────────
+  # Modeled on nemoclaw-blueprint/policies/presets/huggingface.yaml.
+  huggingface:
+    name: huggingface
+    endpoints:
+      - host: huggingface.co
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: cdn-lfs.huggingface.co
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }
+
+  # ── GitHub ─────────────────────────────────────────────────────────────
+  # Read/write API + raw content fetch. Binary-bound to hermes so arbitrary
+  # curl/wget can't piggyback on this policy.
+  github:
+    name: github
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: PUT, path: "/**" }
+          - allow: { method: PATCH, path: "/**" }
+          - allow: { method: DELETE, path: "/**" }
+      - host: raw.githubusercontent.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /root/.local/bin/hermes }
+
+  # ── DuckDuckGo web search (GET only) ───────────────────────────────────
+  # Read-only web search. No POST — prevents using DDG as an exfil sink.
   web_search:
-    binaries:
-      - "/root/.local/bin/hermes*"
+    name: web_search
     endpoints:
-      - host: "html.duckduckgo.com"
+      - host: html.duckduckgo.com
         port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "GET"
-            path: "/*"
-            access_level: read-only
-      - host: "api.duckduckgo.com"
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+      - host: api.duckduckgo.com
         port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "GET"
-            path: "/*"
-            access_level: read-only
-
-  github_skills:
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
     binaries:
-      - "/root/.local/bin/hermes*"
-    endpoints:
-      - host: "github.com"
-        port: 443
-        protocol: https
-        tls: required
-      - host: "raw.githubusercontent.com"
-        port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "GET"
-            path: "/*"
-            access_level: read-only
-      - host: "api.github.com"
-        port: 443
-        protocol: https
-        tls: required
-        rest:
-          - method: "GET"
-            path: "/*"
-            access_level: read-only
+      - { path: /root/.local/bin/hermes }
