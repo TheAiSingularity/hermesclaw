@@ -104,7 +104,7 @@ network_policies:
           - method: "POST"
             path: "/v1/chat/completions"
     binaries:
-      - path: "/root/.local/bin/hermes*"   # glob supported
+      - path: "/usr/local/bin/hermes*"   # glob supported
 ```
 
 ---

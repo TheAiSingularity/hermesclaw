@@ -16,9 +16,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # skills are fully installed before the wizard runs, so we ignore the wizard failure.
 RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
     | bash || true \
-    && test -f /root/.local/bin/hermes || test -f /root/.hermes/bin/hermes \
+    && ( test -f /root/.local/bin/hermes || test -f /root/.hermes/bin/hermes ) \
     || (echo "Hermes binary not found after install" && exit 1)
 
+# Relocate hermes out of /root/ so OpenShell's non-root sandbox user can reach it.
+# Without this, `openshell sandbox connect` sessions hit `Permission denied` on
+# /root/.local/bin/hermes. See issue #3.
+#
+# The binary moves to /usr/local/bin/hermes (already on default PATH) and the
+# venv to /opt/hermes-venv, with the binary's shebang rewritten to point at the
+# relocated venv's python3. `chmod -R a+rX` uses capital X so only already-
+# executable files (i.e. the python interpreter, hermes entry point, etc.)
+# keep execute perms; data files do not gain spurious exec.
+# Finally, chmod 755 /root lets the sandbox user traverse into /root/ to reach
+# its .hermes data directory (config + memories + skills volume mount) without
+# granting write access.
+RUN if [ -d /root/.hermes/hermes-agent/venv ]; then \
+        cp -a /root/.hermes/hermes-agent/venv /opt/hermes-venv \
+        && chmod -R a+rX /opt/hermes-venv ; \
+    fi \
+    && if [ -f /root/.local/bin/hermes ]; then \
+        cp /root/.local/bin/hermes /usr/local/bin/hermes ; \
+    elif [ -f /root/.hermes/bin/hermes ]; then \
+        cp /root/.hermes/bin/hermes /usr/local/bin/hermes ; \
+    fi \
+    && chmod a+rx /usr/local/bin/hermes \
+    && if [ -d /opt/hermes-venv ]; then \
+        sed -i "1s|.*|#!/opt/hermes-venv/bin/python3|" /usr/local/bin/hermes ; \
+    fi \
+    && chmod 755 /root
+
+# Keep /root/.local/bin in PATH for backward compatibility with any script that
+# invokes the original install location. /usr/local/bin (where we put the
+# relocated binary) is already on the default PATH.
 ENV PATH="/root/.local/bin:$PATH"
 
 # Configure Hermes to use local llama.cpp server (via host.docker.internal on macOS).

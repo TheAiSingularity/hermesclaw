@@ -13,6 +13,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-04-22
+
+Bug-fix release addressing field reports from DGX Spark testing (thanks [@ppritcha](https://github.com/ppritcha) for all three).
+
+### Fixed
+
+- **`hermes` binary now reachable by the sandbox user ([#3](https://github.com/TheAiSingularity/hermesclaw/issues/3)).** Hermes was installed under `/root/.local/bin/hermes` and its venv under `/root/.hermes/hermes-agent/venv/`, both inaccessible to the unprivileged `sandbox` user that OpenShell switches to for interactive sessions (`openshell sandbox connect` hit `Permission denied`; the `CMD` entrypoint worked only because it launches as root before the user policy is applied). The Dockerfile now copies the binary to `/usr/local/bin/hermes` (on default PATH), copies the venv to `/opt/hermes-venv`, rewrites the binary's shebang to point at the relocated python3, and `chmod 755 /root` so the sandbox user can traverse into the data directory. Policy `binaries:` paths in all four policy files updated from `/root/.local/bin/hermes` to `/usr/local/bin/hermes`.
+- **`hermesclaw chat` no longer crashes in OpenShell mode ([#1](https://github.com/TheAiSingularity/hermesclaw/issues/1)).** The old code invoked `openshell sandbox connect "$NAME" -- bash -c "..."`, but `openshell sandbox connect` does not accept `-- COMMAND` syntax (that is only supported on `sandbox create`). Docker users saw no error; OpenShell users got a cryptic `error: unexpected argument 'bash' found`. `cmd_chat` now prefers the Docker path, then host-installed `hermes`, and as a last resort pipes the chat invocation through `openshell sandbox connect`'s stdin. On failure it prints an explicit workaround (`openshell sandbox connect <name>`, then `hermes chat -q ...` inside) with a link to the tracking issue rather than the cryptic OpenShell error.
+- **`scripts/hermesclaw` `VERSION` ([#2](https://github.com/TheAiSingularity/hermesclaw/issues/2))** — bumped to `0.3.2` (was stuck at `0.2.0` through the v0.3.0 and v0.3.1 releases).
+
+---
+
 ## [0.3.1] — 2026-04-21
 
 Consolidated release covering all work between v0.2.0 and today. Supersedes the unreleased v0.3.0 and v0.4.0 development labels, which never tagged a release — their content is folded in below.
@@ -119,7 +131,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TheAiSingularity/hermesclaw/releases/tag/v0.1.0

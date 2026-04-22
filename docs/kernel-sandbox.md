@@ -176,10 +176,10 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 ```
 
-- **Binary-bound:** each policy lists the executable (`/root/.local/bin/hermes`) that may use it. A `curl` dropped into `/tmp/` cannot use these rules.
+- **Binary-bound:** each policy lists the executable (`/usr/local/bin/hermes`) that may use it. A `curl` dropped into `/tmp/` cannot use these rules.
 - **Method + path glob:** for example, the Telegram policy only allows `GET/POST` on `/bot*/**` — nothing else.
 - **`tls: terminate`:** the proxy terminates TLS, enabling L7 inspection.
 - **`access: full` for WebSockets:** Discord's gateway and Slack's Socket Mode bind as `access: full` because the proxy cannot filter post-upgrade WebSocket frames.

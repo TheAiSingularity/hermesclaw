@@ -18,9 +18,10 @@
 # WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
 # change field names without verifying against
 # `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
-# Messaging endpoints are bound to `/root/.local/bin/hermes` (Python) instead
+# Messaging endpoints are bound to `/usr/local/bin/hermes` (Python) instead
 # of `/usr/local/bin/node` — this is the only intentional divergence from the
-# NemoClaw preset shape.
+# NemoClaw preset shape. (Relocated from /root/.local/bin in v0.3.2 so the
+# OpenShell sandbox user can execute it; see issue #3.)
 #
 # Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/policy-permissive.yaml --wait
@@ -73,7 +74,7 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── Telegram Bot API ───────────────────────────────────────────────────
   telegram:
@@ -88,7 +89,7 @@ network_policies:
           - allow: { method: GET, path: "/bot*/**" }
           - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── Discord ────────────────────────────────────────────────────────────
   discord:
@@ -123,7 +124,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── Slack ──────────────────────────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/slack.yaml. Task spec
@@ -164,7 +165,7 @@ network_policies:
         port: 443
         access: full
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── HuggingFace Hub / LFS / Inference ──────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/huggingface.yaml.
@@ -187,7 +188,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── GitHub ─────────────────────────────────────────────────────────────
   # Read/write API + raw content fetch. Binary-bound to hermes so arbitrary
@@ -222,7 +223,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── DuckDuckGo web search (GET only) ───────────────────────────────────
   # Read-only web search. No POST — prevents using DDG as an exfil sink.
@@ -244,4 +245,4 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }

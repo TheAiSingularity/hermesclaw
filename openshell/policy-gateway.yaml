@@ -19,8 +19,9 @@
 # `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
 # Note: the NemoClaw presets bind messaging endpoints to `/usr/local/bin/node`
 # because OpenClaw is a Node.js app. Hermes is Python, so we bind to
-# `/root/.local/bin/hermes` instead — this is the ONLY intentional divergence
-# from the reference preset shape.
+# `/usr/local/bin/hermes` instead — this is the ONLY intentional divergence
+# from the reference preset shape. (Relocated from /root/.local/bin in v0.3.2
+# so the OpenShell sandbox user can execute it; see issue #3.)
 #
 # Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/policy-gateway.yaml --wait
@@ -73,7 +74,7 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── Telegram Bot API ───────────────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/telegram.yaml.
@@ -90,7 +91,7 @@ network_policies:
           - allow: { method: GET, path: "/bot*/**" }
           - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
 
   # ── Discord API + gateway + CDN ────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/discord.yaml.
@@ -129,4 +130,4 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /root/.local/bin/hermes }
+      - { path: /usr/local/bin/hermes }
