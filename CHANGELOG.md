@@ -13,6 +13,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.5] — 2026-04-22
+
+Bug-fix for v0.3.4. Install.sh's symlink-into-`/usr/local/bin` path was broken in a way the pre-release tests missed; end-to-end smoke-test of the installer caught it.
+
+### Fixed
+
+- **`hermesclaw` CLI failed when invoked via a symlink ([scripts/hermesclaw](scripts/hermesclaw)).** v0.3.4's `install.sh` symlinks the script into `/usr/local/bin/hermesclaw`, but the script computed `POLICY_DIR` from `dirname(${BASH_SOURCE[0]})/../openshell` — when invoked through the symlink, that resolved to `/usr/local/openshell`, which doesn't exist. `hermesclaw version`, `help`, `policy-list`, and every other subcommand exited immediately with `cd: /usr/local/openshell: No such file or directory`. Running `./scripts/hermesclaw` directly from the cloned repo was unaffected.
+- Added a portable symlink-resolution loop at the top of `scripts/hermesclaw`. Works on macOS (BSD `readlink`) and Linux (GNU `readlink`) without coreutils or `realpath`.
+
+### Upgrade notes
+
+Anyone who ran the v0.3.4 one-liner should either re-run it (install.sh updates the cloned repo in place) or `git -C ~/.hermesclaw pull` to pick up the fix.
+
+---
+
 ## [0.3.4] — 2026-04-22
 
 Distribution polish. First release with a one-line install and a published container image.
@@ -167,7 +182,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...v0.3.2

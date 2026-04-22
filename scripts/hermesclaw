@@ -34,8 +34,23 @@ DIM='\033[2m'
 RESET='\033[0m'
 
 SANDBOX_NAME="${HERMESCLAW_SANDBOX:-hermesclaw-1}"
-POLICY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../openshell" && pwd)"
-VERSION="0.3.4"
+
+# Resolve symlinks so POLICY_DIR works when the CLI is invoked via a symlink
+# (which is how scripts/install.sh puts hermesclaw on $PATH — symlinks into
+# /usr/local/bin). Without this, dirname(${BASH_SOURCE[0]}) returns the
+# symlink's directory, and ../openshell resolves to /usr/local/openshell
+# instead of the cloned repo. Portable pattern: works on macOS (BSD readlink)
+# and Linux (GNU readlink) without coreutils or realpath.
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do
+    _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+    _src="$(readlink "$_src")"
+    [[ $_src != /* ]] && _src="$_dir/$_src"
+done
+POLICY_DIR="$(cd "$(dirname "$_src")/../openshell" && pwd)"
+unset _src _dir
+
+VERSION="0.3.5"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 _has() { command -v "$1" &>/dev/null; }
