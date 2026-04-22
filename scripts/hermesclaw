@@ -35,7 +35,7 @@ RESET='\033[0m'
 
 SANDBOX_NAME="${HERMESCLAW_SANDBOX:-hermesclaw-1}"
 POLICY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../openshell" && pwd)"
-VERSION="0.2.0"
+VERSION="0.3.2"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 _has() { command -v "$1" &>/dev/null; }
@@ -431,23 +431,42 @@ cmd_chat() {
         exit 1
     fi
 
-    if _has openshell && _sandbox_running; then
-        # Run inside the sandbox — pass prompt via env to avoid shell quoting issues.
-        # The single-quoted string is intentional: $HERMESCLAW_PROMPT expands inside the sandbox shell.
-        # shellcheck disable=SC2016
-        HERMESCLAW_PROMPT="$prompt" openshell sandbox connect "$SANDBOX_NAME" -- \
-            bash -c 'hermes chat -q "$HERMESCLAW_PROMPT"'
-    elif _has docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
-        # Run in the Docker container
+    # Docker mode — cleanest path; `docker exec` has proper one-shot command support.
+    if _has docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
         docker exec hermesclaw hermes chat -q "$prompt"
-    elif _has hermes; then
-        # Run locally
+        return
+    fi
+
+    # Host-installed Hermes — no sandbox.
+    if _has hermes; then
         hermes chat -q "$prompt"
-    else
-        echo -e "${YELLOW}No running sandbox or Hermes installation found.${RESET}"
-        echo "Start with: hermesclaw start"
+        return
+    fi
+
+    # OpenShell mode. `openshell sandbox connect` does not accept `-- COMMAND`
+    # (see issue #1). We pipe the hermes invocation through stdin and exit.
+    # If the sandbox user can't find `hermes` on PATH we print the manual
+    # workaround rather than a cryptic error.
+    if _has openshell && _sandbox_running; then
+        local sandbox_cmd
+        printf -v sandbox_cmd 'hermes chat -q %q\nexit\n' "$prompt"
+        # Redirect stdin; capture exit status so we can print guidance on failure.
+        if echo "$sandbox_cmd" | openshell sandbox connect "$SANDBOX_NAME"; then
+            return
+        fi
+        echo "" >&2
+        echo -e "${YELLOW}Could not run 'hermes chat' inside sandbox $SANDBOX_NAME.${RESET}" >&2
+        echo "  Workaround:" >&2
+        echo -e "    ${CYAN}openshell sandbox connect $SANDBOX_NAME${RESET}" >&2
+        echo -e "    ${DIM}# then, inside the sandbox:${RESET}" >&2
+        echo -e "    ${CYAN}hermes chat -q 'your prompt'${RESET}" >&2
+        echo "  Tracking: https://github.com/TheAiSingularity/hermesclaw/issues/1" >&2
         exit 1
     fi
+
+    echo -e "${YELLOW}No running sandbox or Hermes installation found.${RESET}"
+    echo "Start with: hermesclaw start"
+    exit 1
 }
 
 cmd_version() {
