@@ -13,6 +13,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-04-22
+
+Distribution polish. First release with a one-line install and a published container image.
+
+### Added
+
+- **One-command install** — `curl -fsSL https://raw.githubusercontent.com/TheAiSingularity/hermesclaw/main/scripts/install.sh | bash` clones the repo to `~/.hermesclaw`, pulls the prebuilt image from GHCR, bootstraps `.env`, and symlinks the `hermesclaw` CLI to `/usr/local/bin`. Non-interactive, idempotent, falls back gracefully when `/usr/local/bin` isn't writable (tries sudo, then prints PATH instructions).
+- **Prebuilt multi-arch image** — published to GitHub Container Registry at `ghcr.io/theaisingularity/hermesclaw:<version>` and `:latest`. Built for `linux/amd64` and `linux/arm64` so it runs on Apple Silicon Macs and NVIDIA DGX Spark out of the box (no local Docker build required — that still works too).
+- **`.github/workflows/release.yml`** — on `v*` tag pushes, builds the multi-arch image with `docker buildx` + QEMU and pushes to GHCR with OCI labels including the pinned Hermes version. Supports `workflow_dispatch` for manual candidate builds.
+
+### Changed
+
+- **README Quick Start** rewritten — primary path is now the one-liner install. "Build from source" is a secondary section for contributors. OpenShell path kept at the end.
+- **README version badge** bumped to 0.3.4.
+- **`scripts/hermesclaw`** — `VERSION` bumped to `0.3.4`.
+- **CI shellcheck** now lints `scripts/install.sh` alongside the other shell scripts.
+
+---
+
 ## [0.3.3] — 2026-04-22
 
 Reproducibility and upstream-tracking release. No behavior changes; makes the stack easier to pin down and debug across hosts.
@@ -148,7 +167,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.2.0...v0.3.1

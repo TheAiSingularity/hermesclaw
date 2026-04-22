@@ -1,0 +1,126 @@
+name: Release
+
+# Build and publish the hermesclaw image to GitHub Container Registry
+# (ghcr.io/theaisingularity/hermesclaw) on semver tag pushes.
+#
+# Tags pushed:
+#   v<version>  — the exact release tag (e.g. v0.3.4)
+#   latest      — moves to the newest release
+#
+# The build is multi-arch (linux/amd64 + linux/arm64) because:
+#   - amd64 covers typical cloud + Intel Linux desktops
+#   - arm64 covers Apple Silicon Macs and NVIDIA DGX Spark hardware
+#     (see field reports in docs/compatibility.md)
+#
+# workflow_dispatch is enabled for manual testing: choose a ref, build and
+# push a candidate tag without needing to cut a real release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag, or SHA)"
+        required: true
+        default: "main"
+      image_tag:
+        description: "Image tag to push (e.g. v0.3.4-rc1). 'latest' is NOT moved on manual runs."
+        required: true
+        default: "manual"
+
+permissions:
+  contents: read
+  packages: write    # required to push to GHCR
+
+jobs:
+  publish:
+    name: Build + push multi-arch image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Resolve image tags
+        id: tags
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push — strip refs/tags/ prefix; tag image with the same semver.
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tags=ghcr.io/${{ github.repository_owner }}/hermesclaw:${VERSION},ghcr.io/${{ github.repository_owner }}/hermesclaw:latest" >> "$GITHUB_OUTPUT"
+            echo "update_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            # Manual run — use the provided image_tag; don't move 'latest'.
+            VERSION="${{ github.event.inputs.image_tag }}"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tags=ghcr.io/${{ github.repository_owner }}/hermesclaw:${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "update_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read pinned Hermes version from Dockerfile
+        id: hermes
+        run: |
+          # Extract the default value of ARG HERMES_VERSION so image metadata
+          # can record it. Falls back to 'unknown' if the line is missing.
+          VER=$(grep -E '^ARG HERMES_VERSION=' Dockerfile | head -1 | cut -d'=' -f2- | tr -d '"' || echo "unknown")
+          echo "version=${VER:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (for arm64 on amd64 runner)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.tags.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.description=Hermes Agent inside NVIDIA OpenShell sandbox. Kernel-enforced security.
+            com.theaisingularity.hermes-version=${{ steps.hermes.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            HERMES_VERSION=${{ steps.hermes.outputs.version }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo "**Image tags:**"
+            echo ""
+            echo '```'
+            echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n'
+            echo '```'
+            echo ""
+            echo "**Hermes Agent pin:** \`${{ steps.hermes.outputs.version }}\`"
+            echo ""
+            echo "**Platforms:** linux/amd64, linux/arm64"
+            echo ""
+            echo "Pull with:"
+            echo ""
+            echo '```bash'
+            echo "docker pull ghcr.io/${{ github.repository_owner }}/hermesclaw:${{ steps.tags.outputs.version }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

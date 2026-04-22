@@ -6,7 +6,7 @@
   <a href="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml"><img src="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome"></a>
-  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.3.0-orange.svg" alt="Version"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.3.4-orange.svg" alt="Version"></a>
 </p>
 
 **Hermes Agent (NousResearch) running inside NVIDIA OpenShell.**
@@ -19,8 +19,9 @@ NVIDIA built OpenShell to hardware-enforce AI agent behavior — blocking networ
 
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
-  - [Path 1 — Docker (no NVIDIA hardware)](#path-1--docker-no-nvidia-hardware-required)
-  - [Path 2 — OpenShell Sandbox](#path-2--openshell-sandbox-full-hardware-enforcement)
+  - [Recommended — one-command install](#recommended--one-command-install)
+  - [Build from source](#build-from-source-if-you-want-to-modify-hermesclaw-itself)
+  - [OpenShell sandbox (full hardware enforcement)](#openshell-sandbox-full-hardware-enforcement)
 - [What OpenShell Enforces](#what-openshell-enforces)
 - [Policy Presets](#policy-presets)
 - [Hermes Features](#hermes-features-inside-the-sandbox)
@@ -48,53 +49,49 @@ OpenShell intercepts every call to `inference.local` inside the sandbox and rout
 
 ## Quick Start
 
-### Path 1 — Docker (no NVIDIA hardware required)
+### Recommended — one-command install
 
-All Hermes features work. No kernel-level sandbox enforcement — Docker isolation only.
+Installs the prebuilt image (multi-arch, `linux/amd64` + `linux/arm64`) from GitHub Container Registry, clones the repo to `~/.hermesclaw`, symlinks the `hermesclaw` CLI to `/usr/local/bin`, and prints your next steps:
 
-**Step 1 — Clone and configure**
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheAiSingularity/hermesclaw/main/scripts/install.sh | bash
+```
+
+Prerequisites: `docker`, `git`, `curl`. Docker Desktop (macOS / Windows) or `dockerd` (Linux) must be running.
+
+After `install.sh` completes, three manual steps remain (model weights, llama-server, start the container):
+
+```bash
+# 1. Download a GGUF model (example: Qwen3 4B, ~2.5 GB)
+curl -L -o ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf \
+  https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
+
+# 2. Start llama-server on the host  (macOS shown; Linux: build llama.cpp from source)
+brew install llama.cpp
+llama-server -m ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf --port 8080 --ctx-size 32768 -ngl 99
+
+# 3. Start HermesClaw
+cd ~/.hermesclaw && docker compose up -d
+hermesclaw chat "hello"
+```
+
+> **Why `--ctx-size 32768`?** Hermes's system prompt alone is ~11k tokens; lower context windows cause overflow on every query.
+
+---
+
+### Build from source (if you want to modify HermesClaw itself)
+
 ```bash
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
-cp .env.example .env
-```
-
-Edit `.env` and set `MODEL_FILE` to your model filename. Download a model into `models/`:
-```bash
-# Example — Qwen3 4B (2.5 GB):
-curl -L -o models/Qwen3-4B-Q4_K_M.gguf \
-  https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
-```
-
-**Step 2 — Build the image**
-```bash
-./scripts/setup.sh
-```
-
-**Step 3 — Start llama-server on your host** (Hermes connects to it via `host.docker.internal`)
-
-macOS:
-```bash
-brew install llama.cpp
-llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 --log-disable
-```
-
-Linux ([build instructions](https://github.com/ggerganov/llama.cpp#build)):
-```bash
-llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99
-```
-
-> **Note:** `--ctx-size 32768` is required. Hermes's system prompt alone is ~11k tokens — lower values cause context overflow on every query.
-
-**Step 4 — Start Hermes**
-```bash
-docker compose up -d
-docker exec -it hermesclaw hermes chat -q "hello"
+cp .env.example .env                 # edit MODEL_FILE and any messaging tokens
+./scripts/setup.sh                   # builds hermesclaw:latest locally
+# ... then steps 2 and 3 above
 ```
 
 ---
 
-### Path 2 — OpenShell Sandbox (full hardware enforcement)
+### OpenShell sandbox (full hardware enforcement)
 
 Requires Linux + NVIDIA GPU + OpenShell installed.
 
@@ -102,26 +99,15 @@ Requires Linux + NVIDIA GPU + OpenShell installed.
 # Install OpenShell (requires NVIDIA account)
 curl -fsSL https://www.nvidia.com/openshell.sh | bash
 
-git clone https://github.com/TheAiSingularity/hermesclaw
-cd hermesclaw
-
-# Build image + register OpenShell policy and profile
-./scripts/setup.sh
-
-# Start llama-server on the host
-llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99
-
-# Start Hermes inside the sandbox
-./scripts/start.sh
+# Install HermesClaw via the one-liner above, then:
+cd ~/.hermesclaw
+llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 &
+hermesclaw start                     # default: strict policy
+hermesclaw start --gpu --policy gateway  # GPU + messaging enabled
+hermesclaw chat "hello"
 ```
 
-Or use the `hermesclaw` CLI:
-```bash
-./scripts/hermesclaw onboard       # check all prerequisites
-./scripts/hermesclaw start         # start with default (strict) policy
-./scripts/hermesclaw start --gpu --policy gateway  # GPU + messaging enabled
-./scripts/hermesclaw chat "hello"  # one-shot message
-```
+Full CLI reference: [hermesclaw CLI](#hermesclaw-cli). Diagnostics: `hermesclaw doctor`.
 
 ---
 

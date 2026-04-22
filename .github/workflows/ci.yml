@@ -61,6 +61,7 @@ jobs:
         run: |
           shellcheck \
             scripts/hermesclaw \
+            scripts/install.sh \
             scripts/setup.sh \
             scripts/start.sh \
             scripts/status.sh \
