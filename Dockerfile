@@ -1,5 +1,10 @@
 FROM debian:bookworm-slim
 
+# Hermes Agent version to install. Pinned to a released tag for reproducible
+# builds; bump after validating a new upstream release locally.
+# See docs/compatibility.md for the tested-against matrix.
+ARG HERMES_VERSION=v2026.4.16
+
 # Install system dependencies needed by the Hermes install script
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -11,13 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Hermes Agent. The install script runs an interactive setup wizard at the
-# end that tries to open /dev/tty (not available in Docker build). The binary and
-# skills are fully installed before the wizard runs, so we ignore the wizard failure.
+# Install Hermes Agent at the pinned tag. The install script runs an interactive
+# setup wizard at the end that tries to open /dev/tty (not available in Docker
+# build). The binary and skills are fully installed before the wizard runs, so
+# we ignore the wizard failure. The install script accepts `--branch <tag>`
+# which it passes through to `git clone --branch`, so any release tag works.
 RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
-    | bash || true \
+    | bash -s -- --branch "${HERMES_VERSION}" || true \
     && ( test -f /root/.local/bin/hermes || test -f /root/.hermes/bin/hermes ) \
-    || (echo "Hermes binary not found after install" && exit 1)
+    || (echo "Hermes binary not found after install" && exit 1) \
+    && echo "${HERMES_VERSION}" > /etc/hermes-version
 
 # Relocate hermes out of /root/ so OpenShell's non-root sandbox user can reach it.
 # Without this, `openshell sandbox connect` sessions hit `Permission denied` on

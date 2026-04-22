@@ -158,6 +158,25 @@ else
     record "WARN" "docker image hermesclaw:latest" "not built — run: ./scripts/setup.sh"
 fi
 
+# 8a. Pinned Hermes version (read /etc/hermes-version written at build time)
+if docker image inspect hermesclaw:latest &>/dev/null 2>&1; then
+    # Try running container first (cheap); fall back to a throwaway container on the image
+    HERMES_VER=""
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
+        HERMES_VER=$(docker exec hermesclaw cat /etc/hermes-version 2>/dev/null || true)
+    fi
+    if [ -z "$HERMES_VER" ]; then
+        HERMES_VER=$(docker run --rm hermesclaw:latest cat /etc/hermes-version 2>/dev/null || true)
+    fi
+    if [ -n "$HERMES_VER" ]; then
+        record "PASS" "hermes version (pinned)" "$HERMES_VER"
+    else
+        record "WARN" "hermes version (pinned)" "no /etc/hermes-version — rebuild image (pre-v0.3.3 build)"
+    fi
+else
+    record "SKIP" "hermes version (pinned)" "image not built"
+fi
+
 # 9. Hermes chat (inside container)
 if ! $QUICK && docker image inspect hermesclaw:latest &>/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q hermesclaw; then
     RESPONSE=$(docker exec hermesclaw hermes chat -q "reply with exactly: ok" 2>/dev/null | tail -1)

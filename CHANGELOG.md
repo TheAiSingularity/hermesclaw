@@ -13,6 +13,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3] — 2026-04-22
+
+Reproducibility and upstream-tracking release. No behavior changes; makes the stack easier to pin down and debug across hosts.
+
+### Added
+
+- **`docs/compatibility.md`** — tested-against matrix for Hermes Agent, OpenShell, NemoClaw blueprint, llama.cpp, Debian base image, and host OS; includes a field-reports section (first entries: [@ppritcha](https://github.com/ppritcha) on DGX Spark, maintainer on macOS/Apple Silicon) and a documented bump policy for each dependency.
+- **`/etc/hermes-version`** written inside the Docker image, recording the Hermes tag the image was built against. Readable via `docker exec hermesclaw cat /etc/hermes-version`.
+- **`scripts/doctor.sh`** — new "hermes version (pinned)" check that reads `/etc/hermes-version` from the running container (or a throwaway container on the image) so field reports automatically include the exact Hermes version.
+
+### Changed
+
+- **Hermes Agent install is now pinned** to `v2026.4.16` via `ARG HERMES_VERSION` in the [Dockerfile](../Dockerfile) and `scripts/install.sh --branch "${HERMES_VERSION}"` (previously pulled `main` on every build, producing non-deterministic images). Override at build time with `docker build --build-arg HERMES_VERSION=vYYYY.M.D`. Bump policy and rationale documented in `docs/compatibility.md`.
+- **`scripts/hermesclaw`** — `VERSION` bumped to `0.3.3`.
+
+---
+
 ## [0.3.2] — 2026-04-22
 
 Bug-fix release addressing field reports from DGX Spark testing (thanks [@ppritcha](https://github.com/ppritcha) for all three).
@@ -131,7 +148,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.1.0...v0.2.0
