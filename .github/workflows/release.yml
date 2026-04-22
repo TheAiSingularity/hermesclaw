@@ -47,17 +47,22 @@ jobs:
       - name: Resolve image tags
         id: tags
         run: |
+          # GHCR requires lowercase repository names; github.repository_owner
+          # can contain mixed case (e.g. TheAiSingularity). Normalise once.
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${OWNER_LC}/hermesclaw"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "push" ]; then
             # Tag push — strip refs/tags/ prefix; tag image with the same semver.
             VERSION="${GITHUB_REF#refs/tags/}"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tags=ghcr.io/${{ github.repository_owner }}/hermesclaw:${VERSION},ghcr.io/${{ github.repository_owner }}/hermesclaw:latest" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
             echo "update_latest=true" >> "$GITHUB_OUTPUT"
           else
             # Manual run — use the provided image_tag; don't move 'latest'.
             VERSION="${{ github.event.inputs.image_tag }}"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "tags=ghcr.io/${{ github.repository_owner }}/hermesclaw:${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE}:${VERSION}" >> "$GITHUB_OUTPUT"
             echo "update_latest=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -121,6 +126,6 @@ jobs:
             echo "Pull with:"
             echo ""
             echo '```bash'
-            echo "docker pull ghcr.io/${{ github.repository_owner }}/hermesclaw:${{ steps.tags.outputs.version }}"
+            echo "docker pull ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
