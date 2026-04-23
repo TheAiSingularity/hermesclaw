@@ -232,7 +232,7 @@ info "Testing detect.py script directly..."
 DETECT_RESULT=$(echo '[
     {"metric": "revenue", "current": 15200, "history": [24100,24300,24200,24500,23900,24800,24200]},
     {"metric": "dau", "current": 4800, "history": [8100,8200,8150,8300,8050,8400,8200]}
-]' | docker exec -i hermesclaw python3 /root/.hermes/skills/anomaly-detection/scripts/detect.py 2>/dev/null || echo "")
+]' | docker exec -i hermesclaw python3 /opt/hermes-data/skills/anomaly-detection/scripts/detect.py 2>/dev/null || echo "")
 
 if echo "$DETECT_RESULT" | grep -qi "anomaly\|z_score\|is_anomaly\|revenue\|dau"; then
     pass "detect.py z-score output correct"

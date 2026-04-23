@@ -82,7 +82,7 @@ filesystem_policy:
     - /usr
     - /etc/ssl
   read_write:
-    - /root/.hermes
+    - /opt/hermes-data
     - /sandbox
     - /tmp
 
@@ -165,7 +165,7 @@ openshell term                           # Live monitoring dashboard (TUI)
 
 # File transfer
 openshell sandbox upload hermesclaw-1 ./local-file.txt /sandbox/file.txt
-openshell sandbox download hermesclaw-1 /root/.hermes/MEMORY.md ./memory-backup.md
+openshell sandbox download hermesclaw-1 /opt/hermes-data/MEMORY.md ./memory-backup.md
 
 # Port forwarding
 openshell forward start hermesclaw-1 --local 9090 --remote 9090

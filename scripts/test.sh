@@ -232,7 +232,7 @@ fi
 # Test: hermes memory inside container
 HERMES_MEMORY_STATUS="❌ not tested"
 if ! $QUICK && _container_running; then
-    MEMORY_COUNT=$(docker exec hermesclaw find /root/.hermes/memories -type f 2>/dev/null | wc -l | tr -d ' ')
+    MEMORY_COUNT=$(docker exec hermesclaw find /opt/hermes-data/memories -type f 2>/dev/null | wc -l | tr -d ' ')
     HERMES_MEMORY_STATUS="✅ $MEMORY_COUNT memory file(s)"
 elif $QUICK; then
     HERMES_MEMORY_STATUS="⏭ skipped (--quick)"
@@ -241,7 +241,7 @@ fi
 # Test: hermes skills inside container
 HERMES_SKILLS_STATUS="❌ not tested"
 if ! $QUICK && _container_running; then
-    SKILL_COUNT=$(docker exec hermesclaw find /root/.hermes/skills -type d -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+    SKILL_COUNT=$(docker exec hermesclaw find /opt/hermes-data/skills -type d -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
     HERMES_SKILLS_STATUS="✅ $SKILL_COUNT skill(s)"
 elif $QUICK; then
     HERMES_SKILLS_STATUS="⏭ skipped (--quick)"

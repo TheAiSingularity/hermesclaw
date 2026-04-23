@@ -154,7 +154,7 @@ docker exec -it hermesclaw hermes chat -q "Review this Python function: def divi
 
 **Test memory persistence**:
 ```bash
-docker exec hermesclaw cat /root/.hermes/memories/MEMORY.md
+docker exec hermesclaw cat /opt/hermes-data/memories/MEMORY.md
 # Should contain your codebase architecture notes
 ```
 

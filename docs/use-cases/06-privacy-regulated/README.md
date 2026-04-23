@@ -160,7 +160,7 @@ openshell sandbox logs hermesclaw-1 --type audit --export audit-$(date +%Y%m%d).
 The strict policy (`openshell/policy-strict.yaml`) enforces:
 
 **Filesystem (Landlock):**
-- Read/write: `/root/.hermes/` (memories, skills, config)
+- Read/write: `/opt/hermes-data/` (memories, skills, config)
 - Read/write: `/sandbox/` (working directory)
 - Read/write: `/tmp/`
 - All other paths: **denied at kernel level**

@@ -74,7 +74,7 @@ inference:
 mounts:
   # Hermes memories, skills, auth — persisted on the host so they survive sandbox recreation
   - hostPath: "~/.hermes"
-    containerPath: "/root/.hermes"
+    containerPath: "/opt/hermes-data"
 
   # User knowledge documents — mounted read-only for RAG / context
   - hostPath: "./knowledge"
@@ -96,4 +96,4 @@ env:
   - name: OPENAI_API_KEY
     value: "not-needed"           # OpenShell manages credentials — this is intentionally empty
   - name: HERMES_HOME
-    value: "/root/.hermes"
+    value: "/opt/hermes-data"

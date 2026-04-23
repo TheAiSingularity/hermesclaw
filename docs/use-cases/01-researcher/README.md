@@ -149,7 +149,7 @@ Expected: Hermes searches arXiv, finds recent papers, summarizes top 5, sends th
 
 Check that memory persists:
 ```bash
-docker exec hermesclaw cat /root/.hermes/memories/MEMORY.md
+docker exec hermesclaw cat /opt/hermes-data/memories/MEMORY.md
 # Should show your research interests
 ```
 

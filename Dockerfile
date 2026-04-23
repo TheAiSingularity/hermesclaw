@@ -29,16 +29,17 @@ RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/
 
 # Relocate hermes out of /root/ so OpenShell's non-root sandbox user can reach it.
 # Without this, `openshell sandbox connect` sessions hit `Permission denied` on
-# /root/.local/bin/hermes. See issue #3.
+# /root/.local/bin/hermes. See issues #3 and #4.
 #
 # The binary moves to /usr/local/bin/hermes (already on default PATH) and the
 # venv to /opt/hermes-venv, with the binary's shebang rewritten to point at the
 # relocated venv's python3. `chmod -R a+rX` uses capital X so only already-
 # executable files (i.e. the python interpreter, hermes entry point, etc.)
 # keep execute perms; data files do not gain spurious exec.
-# Finally, chmod 755 /root lets the sandbox user traverse into /root/ to reach
-# its .hermes data directory (config + memories + skills volume mount) without
-# granting write access.
+#
+# Hermes data (config, memories, skills, sessions) moves from /root/.hermes to
+# /opt/hermes-data so the sandbox user can access it without `chmod 755 /root`,
+# which would expose all of /root/ including credentials. See issue #4.
 RUN if [ -d /root/.hermes/hermes-agent/venv ]; then \
         cp -a /root/.hermes/hermes-agent/venv /opt/hermes-venv \
         && chmod -R a+rX /opt/hermes-venv ; \
@@ -51,13 +52,24 @@ RUN if [ -d /root/.hermes/hermes-agent/venv ]; then \
     && chmod a+rx /usr/local/bin/hermes \
     && if [ -d /opt/hermes-venv ]; then \
         sed -i "1s|.*|#!/opt/hermes-venv/bin/python3|" /usr/local/bin/hermes ; \
-    fi \
-    && chmod 755 /root
+    fi
 
-# Keep /root/.local/bin in PATH for backward compatibility with any script that
-# invokes the original install location. /usr/local/bin (where we put the
-# relocated binary) is already on the default PATH.
-ENV PATH="/root/.local/bin:$PATH"
+# Move Hermes data out of /root/ so the sandbox user can reach config, memories,
+# and skills without opening /root (which contains credentials). See issue #4.
+RUN cp -a /root/.hermes /opt/hermes-data \
+    && chmod -R a+rX /opt/hermes-data \
+    && mkdir -p /opt/hermes-data/memories /opt/hermes-data/sessions \
+               /opt/hermes-data/skills /opt/hermes-data/cron \
+               /opt/hermes-data/hooks /opt/hermes-data/logs \
+    && chmod -R a+rwX /opt/hermes-data/memories \
+                      /opt/hermes-data/sessions \
+                      /opt/hermes-data/skills \
+                      /opt/hermes-data/cron \
+                      /opt/hermes-data/hooks \
+                      /opt/hermes-data/logs
+
+ENV HERMES_HOME="/opt/hermes-data"
+ENV PATH="/usr/local/bin:$PATH"
 
 # Configure Hermes to use local llama.cpp server (via host.docker.internal on macOS).
 # provider: "custom" (NOT alias "llamacpp") is required — runtime_provider.py only
@@ -66,17 +78,17 @@ RUN sed -i \
     -e 's|^  default: .*|  default: "local"|' \
     -e 's|^  provider: .*|  provider: "custom"|' \
     -e 's|^  base_url: .*|  base_url: "http://host.docker.internal:8080/v1"|' \
-    /root/.hermes/config.yaml \
-    && sed -i '/^  base_url: "http:\/\/host.docker.internal/a\\  api_key: "local"' /root/.hermes/config.yaml \
+    /opt/hermes-data/config.yaml \
+    && sed -i '/^  base_url: "http:\/\/host.docker.internal/a\\  api_key: "local"' /opt/hermes-data/config.yaml \
     && echo "Hermes configured for local llamacpp at host.docker.internal:8080"
 
 # Working directory — maps to the sandboxed filesystem
 WORKDIR /sandbox
 
 # Persistent volumes:
-#   /root/.hermes  — Hermes memories, skills, config (persists across restarts)
-#   /sandbox       — Agent working directory
-VOLUME ["/root/.hermes", "/sandbox"]
+#   /opt/hermes-data — Hermes memories, skills, config (persists across restarts)
+#   /sandbox         — Agent working directory
+VOLUME ["/opt/hermes-data", "/sandbox"]
 
 # Default: start the Hermes gateway (handles Telegram, Signal, Discord, etc.)
 # Override with: docker compose run hermesclaw hermes chat -q "hello"

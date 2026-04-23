@@ -133,7 +133,7 @@ filesystem_policy:
     - /sandbox/knowledge     # user docs (ro mount)
     - /sandbox/configs       # persona + config (ro mount)
   read_write:
-    - /root/.hermes          # memories, skills, auth
+    - /opt/hermes-data       # memories, skills, auth
     - /sandbox               # working dir
     - /tmp
 ```
@@ -278,7 +278,7 @@ Changes to `openshell/*.yaml` are reviewed manually in PRs. There is no `hermesc
 
 ### 9. Memory volume is read-write for the agent
 
-`/root/.hermes` is read-write in all policies (memories, skills, auth). This is intentional — persistent memory is a feature — but it means a compromised agent can poison its own future sessions by editing `~/.hermes/memories/MEMORY.md`. There is no write-ahead integrity check or append-only mode.
+`/opt/hermes-data` is read-write in all policies (memories, skills, auth). This is intentional — persistent memory is a feature — but it means a compromised agent can poison its own future sessions by editing `/opt/hermes-data/memories/MEMORY.md`. There is no write-ahead integrity check or append-only mode.
 
 ### 10. No per-skill policy scoping
 
@@ -343,7 +343,7 @@ Small sidecar (shell script ok) that tails OpenShell's audit log and forwards po
 ### Medium-term
 
 **6. Write-protected memory mode.**
-Optional policy flag that mounts `/root/.hermes/memories/` as append-only or read-only for a session. Agents that need to mutate memory can do so out-of-band via a human-approved step.
+Optional policy flag that mounts `/opt/hermes-data/memories/` as append-only or read-only for a session. Agents that need to mutate memory can do so out-of-band via a human-approved step.
 
 **7. Per-skill policy scoping.**
 A skill manifest could declare which network policies it requires; the CLI enforces that only those are active during its execution. Requires broader changes — effectively a capability system layered on top of policies.
