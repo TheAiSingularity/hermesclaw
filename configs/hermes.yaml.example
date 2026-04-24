@@ -66,7 +66,7 @@ agent:
 #   USER.md   (~500 tokens) — user profile, preferences, communication style
 memory:
   enabled: true
-  path: /root/.hermes/memories     # Inside the container
+  path: /opt/hermes-data/memories   # Inside the container
 
   # Honcho integration: async memory writes + dialectic user modeling
   # honcho:
@@ -78,7 +78,7 @@ memory:
 # Skills are stored in ~/.hermes/skills/ and loaded on demand.
 skills:
   enabled: true
-  path: /root/.hermes/skills       # Inside the container
+  path: /opt/hermes-data/skills     # Inside the container
   auto_create: true                # Create skills after complex tasks (5+ tool calls)
 
   # External skill directories (scanned in addition to path above)

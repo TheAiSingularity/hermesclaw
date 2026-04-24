@@ -60,7 +60,7 @@ services:
       # and routes to cloud. Local inference uses the config.yaml provider=llamacpp.
       OPENAI_API_KEY: ""
       OPENROUTER_API_KEY: ""
-      HERMES_HOME: "/root/.hermes"
+      HERMES_HOME: "/opt/hermes-data"
       # Gateway tokens (override in .env)
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN:-}"
@@ -77,9 +77,9 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       # Persist Hermes memories across container restarts
-      - hermesclaw-memories:/root/.hermes/memories
+      - hermesclaw-memories:/opt/hermes-data/memories
       # Persist skills across container restarts (self-improvement survives restarts)
-      - hermesclaw-skills:/root/.hermes/skills
+      - hermesclaw-skills:/opt/hermes-data/skills
       # Mount user knowledge docs read-only for RAG context
       - ./knowledge:/sandbox/knowledge:ro
       # Mount persona + config files read-only

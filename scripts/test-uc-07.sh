@@ -125,7 +125,7 @@ Please remember this watchlist and alert configuration." \
     2>/dev/null | tail -3 || true
 
 # Verify memory stored
-MEMORY_CONTENT=$(docker exec hermesclaw cat /root/.hermes/memories/MEMORY.md 2>/dev/null || echo "")
+MEMORY_CONTENT=$(docker exec hermesclaw cat /opt/hermes-data/memories/MEMORY.md 2>/dev/null || echo "")
 if echo "$MEMORY_CONTENT" | grep -qi "NVDA\|watchlist\|threshold\|820\|950"; then
     pass "Watchlist + thresholds saved to memory"
     update_result "UC07" "Watchlist + thresholds saved to memory" "hermes" "✅"
@@ -167,7 +167,7 @@ MONITOR_RESULT=$(echo '[
     {"symbol": "NVDA", "current_price": 823, "threshold_high": 950, "threshold_low": 820},
     {"symbol": "TSLA", "current_price": 240, "threshold_high": 280, "threshold_low": 220},
     {"symbol": "BTC-USD", "current_price": 82000, "threshold_high": 95000, "threshold_low": 78000}
-]' | docker exec -i hermesclaw python3 /root/.hermes/skills/market-alerts/scripts/monitor.py 2>/dev/null || echo "")
+]' | docker exec -i hermesclaw python3 /opt/hermes-data/skills/market-alerts/scripts/monitor.py 2>/dev/null || echo "")
 
 if echo "$MONITOR_RESULT" | grep -qi "alert\|breach\|threshold\|NVDA\|result"; then
     pass "monitor.py output correct"

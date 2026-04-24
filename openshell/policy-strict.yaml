@@ -38,7 +38,7 @@ filesystem_policy:
     - /sandbox/knowledge     # user knowledge docs (mounted ro)
     - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /root/.hermes          # Hermes memories, skills, auth
+    - /opt/hermes-data       # Hermes memories, skills, auth
     - /sandbox               # agent working directory
     - /tmp
 

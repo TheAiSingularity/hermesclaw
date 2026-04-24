@@ -9,7 +9,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-*Changes staged for the next release go here.*
+### Fixed
+
+- **Removed `chmod 755 /root` — Hermes data relocated to `/opt/hermes-data` ([#4](https://github.com/TheAiSingularity/hermesclaw/issues/4)).** The v0.3.2 fix for #3 used `chmod 755 /root` so the sandbox user could traverse into `/root/.hermes`. This exposed the entire root home directory — including API keys in `config.yaml`, SSH keys, and shell history — to the unprivileged `sandbox` user. Hermes data now lives at `/opt/hermes-data` with `HERMES_HOME` set accordingly. `/root` stays at its default `700` permissions. Updated: Dockerfile, all four OpenShell policy files, `hermesclaw-profile.yaml`, `docker-compose.yml`, `configs/hermes.yaml.example`, test scripts, and documentation.
 
 ---
 

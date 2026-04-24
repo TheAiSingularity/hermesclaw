@@ -93,7 +93,7 @@ docker exec hermesclaw hermes chat -q \
     2>/dev/null | tail -3 || true
 
 # Check if MEMORY.md was written
-MEMORY_CONTENT=$(docker exec hermesclaw cat /root/.hermes/memories/MEMORY.md 2>/dev/null || echo "")
+MEMORY_CONTENT=$(docker exec hermesclaw cat /opt/hermes-data/memories/MEMORY.md 2>/dev/null || echo "")
 if echo "$MEMORY_CONTENT" | grep -qi "transformer\|research\|LLM"; then
     pass "Memory written to MEMORY.md"
     update_result "UC01" "Memory written to MEMORY.md" "hermes" "✅"
