@@ -50,7 +50,7 @@ done
 POLICY_DIR="$(cd "$(dirname "$_src")/../openshell" && pwd)"
 unset _src _dir
 
-VERSION="0.3.5"
+VERSION="0.3.6"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 _has() { command -v "$1" &>/dev/null; }

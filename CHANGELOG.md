@@ -9,9 +9,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
+*Changes staged for the next release go here.*
 
-- **Removed `chmod 755 /root` — Hermes data relocated to `/opt/hermes-data` ([#4](https://github.com/TheAiSingularity/hermesclaw/issues/4)).** The v0.3.2 fix for #3 used `chmod 755 /root` so the sandbox user could traverse into `/root/.hermes`. This exposed the entire root home directory — including API keys in `config.yaml`, SSH keys, and shell history — to the unprivileged `sandbox` user. Hermes data now lives at `/opt/hermes-data` with `HERMES_HOME` set accordingly. `/root` stays at its default `700` permissions. Updated: Dockerfile, all four OpenShell policy files, `hermesclaw-profile.yaml`, `docker-compose.yml`, `configs/hermes.yaml.example`, test scripts, and documentation.
+---
+
+## [0.3.6] — 2026-04-24
+
+Security patch addressing a regression introduced in v0.3.2. Thanks [@ppritcha](https://github.com/ppritcha) for the field report and the fix ([#4](https://github.com/TheAiSingularity/hermesclaw/issues/4), [#5](https://github.com/TheAiSingularity/hermesclaw/pull/5)).
+
+### Security / Fixed
+
+- **Removed `chmod 755 /root` — Hermes data relocated to `/opt/hermes-data` ([#4](https://github.com/TheAiSingularity/hermesclaw/issues/4)).** The v0.3.2 fix for [#3](https://github.com/TheAiSingularity/hermesclaw/issues/3) used `chmod 755 /root` so the unprivileged `sandbox` user could traverse into `/root/.hermes`. That incidentally exposed the entire root home directory — including API keys in `config.yaml`, SSH keys, GPG keys, and shell history — to every process running under `sandbox`. Hermes data now lives at `/opt/hermes-data` with `HERMES_HOME` set accordingly; `/root` stays at its default `700` permissions. Updated: Dockerfile, all four OpenShell policy files, `hermesclaw-profile.yaml`, `docker-compose.yml`, `configs/hermes.yaml.example`, test scripts, and documentation.
+
+### Upgrade notes
+
+Existing installations: rebuild the image (`./scripts/setup.sh` or `docker pull ghcr.io/theaisingularity/hermesclaw:v0.3.6`). Data in the named volumes `hermesclaw-memories` and `hermesclaw-skills` is automatically reached at the new mount points — no manual migration needed, `HERMES_HOME` points Hermes at the right location.
+
+If you had files under `/root/.hermes/` on the host (OpenShell profile mount), the profile's `containerPath` now maps `~/.hermes` → `/opt/hermes-data`. Same host-side directory, new in-container location, same data.
 
 ---
 
@@ -184,7 +198,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.2...v0.3.3
