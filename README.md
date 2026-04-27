@@ -6,7 +6,7 @@
   <a href="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml"><img src="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome"></a>
-  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.3.4-orange.svg" alt="Version"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0-orange.svg" alt="Version"></a>
 </p>
 
 **Hermes Agent (NousResearch) running inside NVIDIA OpenShell.**
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/TheAiSingularity/hermesclaw/main/sc
 
 Prerequisites: `docker`, `git`, `curl`. Docker Desktop (macOS / Windows) or `dockerd` (Linux) must be running.
 
-After `install.sh` completes, three manual steps remain (model weights, llama-server, start the container):
+After `install.sh` completes, three manual steps remain (model weights, llama-server, start the sandbox):
 
 ```bash
 # 1. Download a GGUF model (example: Qwen3 4B, ~2.5 GB)
@@ -70,9 +70,9 @@ curl -L -o ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf \
 brew install llama.cpp
 llama-server -m ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf --port 8080 --ctx-size 32768 -ngl 99
 
-# 3. Start HermesClaw
-cd ~/.hermesclaw && docker compose up -d
-hermesclaw chat "hello"
+# 3. Start HermesClaw (creates a named sandbox)
+hermesclaw mybot start
+hermesclaw mybot chat "hello"
 ```
 
 > **Why `--ctx-size 32768`?** Hermes's system prompt alone is ~11k tokens; lower context windows cause overflow on every query.
@@ -102,9 +102,11 @@ curl -fsSL https://www.nvidia.com/openshell.sh | bash
 # Install HermesClaw via the one-liner above, then:
 cd ~/.hermesclaw
 llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 &
-hermesclaw start                     # default: strict policy
-hermesclaw start --gpu --policy gateway  # GPU + messaging enabled
-hermesclaw chat "hello"
+hermesclaw mybot start                          # default: strict policy
+hermesclaw mybot start --gpu --policy gateway   # GPU + messaging enabled
+hermesclaw mybot chat "hello"
+hermesclaw list                                 # see all sandboxes
+hermesclaw mybot snapshot create                # point-in-time backup
 ```
 
 Full CLI reference: [hermesclaw CLI](#hermesclaw-cli). Diagnostics: `hermesclaw doctor`.
@@ -129,9 +131,9 @@ All four layers are enforced **out-of-process** — even a fully compromised Her
 Switch security posture **without restarting** the sandbox:
 
 ```bash
-./scripts/hermesclaw policy-set strict      # inference only (default)
-./scripts/hermesclaw policy-set gateway     # + Telegram + Discord
-./scripts/hermesclaw policy-set permissive  # + web search + GitHub skills
+hermesclaw mybot policy-set strict      # inference only (default)
+hermesclaw mybot policy-set gateway     # + Telegram + Discord
+hermesclaw mybot policy-set permissive  # + web search + GitHub skills
 ```
 
 | Preset | Inference | Telegram / Discord | Web Search | GitHub Skills |
@@ -178,7 +180,7 @@ Pre-built skills that encode recurring workflows. Install with one command, invo
 
 After installing, invoke from chat or any connected messaging platform:
 ```bash
-docker exec -it hermesclaw hermes chat -q "run research-digest"
+hermesclaw mybot chat "run research-digest"
 # or in Telegram: "run the anomaly-detection skill"
 ```
 
@@ -211,7 +213,7 @@ Full comparison and test results: [docs/test-results.md](docs/test-results.md) �
 | | HermesClaw | NemoClaw |
 |---|---|---|
 | **Agent** | Hermes (NousResearch) | OpenClaw (wrapped by NemoClaw) |
-| **Sandbox** | OpenShell (optional) | OpenShell |
+| **Sandbox** | OpenShell | OpenShell |
 | **Tools** | 40+ (web, browser, vision, voice, RL, …) | 25+ via OpenClaw |
 | **Memory** | Persistent MEMORY.md + USER.md | Session only — no cross-session persistence |
 | **Self-improving skills** | Yes (DSPy + GEPA) | No |
@@ -227,19 +229,40 @@ Full comparison and test results: [docs/test-results.md](docs/test-results.md) �
 
 ## hermesclaw CLI
 
+Sandboxes are named. Use `hermesclaw <name> <command>` or omit the name to use the default.
+
 ```
-hermesclaw onboard                    First-time setup and prerequisite check
-hermesclaw start [--gpu] [--policy]   Start sandbox (OpenShell) or docker compose
-hermesclaw stop                       Stop sandbox (memories + skills preserved)
-hermesclaw status                     Show inference config + memory/skill counts
-hermesclaw connect                    Open interactive shell inside sandbox
-hermesclaw logs [--follow]            Stream sandbox logs
-hermesclaw policy-list                List available policy presets
-hermesclaw policy-set PRESET          Hot-swap policy without restart
-hermesclaw doctor                     End-to-end diagnostic
-hermesclaw chat "prompt"              One-shot message to Hermes
-hermesclaw version                    Print version
-hermesclaw uninstall                  Remove Docker image (data preserved)
+GLOBAL COMMANDS
+  hermesclaw onboard                    First-time setup and prerequisite check
+  hermesclaw list                       List registered sandboxes
+  hermesclaw backup-all                 Snapshot every registered sandbox
+  hermesclaw doctor                     End-to-end diagnostic
+  hermesclaw version                    Print version
+  hermesclaw uninstall                  Remove HermesClaw (data preserved)
+
+SANDBOX COMMANDS  (hermesclaw [<name>] <command>)
+  start [--gpu] [--policy PRESET]       Create and start sandbox via OpenShell
+  stop                                  Stop sandbox (memories + skills preserved)
+  status                                Show inference config + memory/skill counts
+  connect                               Open interactive shell inside sandbox
+  logs [--follow]                       Stream sandbox logs
+  policy-list                           List available policy presets
+  policy-set PRESET                     Hot-swap policy without restart
+  chat "prompt"                         One-shot message to Hermes
+
+LIFECYCLE COMMANDS  (hermesclaw [<name>] <command>)
+  snapshot [create|list|restore [PREFIX]]  Manage point-in-time snapshots
+  backup                                Alias for snapshot create
+  restore [PREFIX]                      Alias for snapshot restore
+  rebuild [--policy P]                  Snapshot → destroy → recreate → restore
+
+EXAMPLES
+  hermesclaw mybot start --policy gateway
+  hermesclaw mybot chat "Hello Hermes"
+  hermesclaw mybot snapshot create
+  hermesclaw mybot rebuild
+  hermesclaw list
+  hermesclaw backup-all
 ```
 
 ---
@@ -258,8 +281,10 @@ Edit `configs/persona.yaml` — set your name, role, expertise, ticker watchlist
 
 ```
 hermesclaw/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                      # Syntax, ShellCheck, and test CI
 ├── Dockerfile                          # Hermes Agent on debian:bookworm-slim
-├── docker-compose.yml                  # Hermes container (llama-server runs on host)
 ├── .env.example                        # MODEL_FILE, CTX_SIZE, bot tokens
 ├── openshell/
 │   ├── hermesclaw-policy.yaml          # Default policy
@@ -280,10 +305,15 @@ hermesclaw/
 │   └── research-digest/               # Weekly arXiv digest
 ├── scripts/
 │   ├── hermesclaw                     # Main CLI
+│   ├── lib/
+│   │   └── hermesclaw-helpers.sh      # Registry, validation, credential check
 │   ├── setup.sh                       # One-time setup
 │   ├── start.sh / stop.sh / status.sh
 │   ├── doctor.sh                      # End-to-end diagnostic
 │   ├── test.sh                        # Feature comparison test suite
+│   ├── test-registry.sh              # Registry & validation tests
+│   ├── test-dispatch.sh              # CLI dispatch tests
+│   ├── test-credentials.sh           # Credential detection tests
 │   ├── test-setup.sh                  # Use-case test environment setup
 │   └── test-uc-01.sh … test-uc-07.sh  # Per-use-case automated tests
 ├── docs/
