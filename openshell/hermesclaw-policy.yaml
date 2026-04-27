@@ -33,15 +33,21 @@ filesystem_policy:
     - /lib64
     - /bin
     - /etc/ssl
+    - /etc/openshell-tls     # OpenShell proxy CA cert (for TLS interception)
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
+    - /opt/hermes            # Hermes installation (sandbox user reads, not writes)
+    - /opt/nvm               # nvm / Node.js (for Node.js-based MCP servers)
+    - /opt/mcp-atlassian     # mcp-atlassian venv (skipped if absent)
+    - /dev/urandom           # Python secrets, random, uuid, hashlib
     - /sandbox/knowledge     # user knowledge docs (mounted ro)
     - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /opt/hermes-data       # Hermes memories, skills, auth
+    - /opt/data              # Hermes memories, skills, auth
     - /sandbox               # agent working directory
     - /tmp
+    - /dev/null              # required by Python subprocess, nvm, shell redirections
 
 landlock:
   compatibility: best_effort
@@ -73,4 +79,4 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }

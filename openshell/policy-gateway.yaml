@@ -19,9 +19,7 @@
 # `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
 # Note: the NemoClaw presets bind messaging endpoints to `/usr/local/bin/node`
 # because OpenClaw is a Node.js app. Hermes is Python, so we bind to
-# `/usr/local/bin/hermes` instead — this is the ONLY intentional divergence
-# from the reference preset shape. (Relocated from /root/.local/bin in v0.3.2
-# so the OpenShell sandbox user can execute it; see issue #3.)
+# `/usr/bin/python3*` (the actual process binary) instead.
 #
 # Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/policy-gateway.yaml --wait
@@ -37,15 +35,21 @@ filesystem_policy:
     - /lib64
     - /bin
     - /etc/ssl
+    - /etc/openshell-tls     # OpenShell proxy CA cert (for TLS interception)
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
+    - /opt/hermes            # Hermes installation (sandbox user reads, not writes)
+    - /opt/nvm               # nvm / Node.js (for Node.js-based MCP servers)
+    - /opt/mcp-atlassian     # mcp-atlassian venv (skipped if absent)
+    - /dev/urandom           # Python secrets, random, uuid, hashlib
     - /sandbox/knowledge     # user knowledge docs (mounted ro)
     - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /opt/hermes-data       # Hermes memories, skills, auth
+    - /opt/data              # Hermes memories, skills, auth
     - /sandbox               # agent working directory
     - /tmp
+    - /dev/null              # required by Python subprocess, nvm, shell redirections
 
 landlock:
   compatibility: best_effort
@@ -74,11 +78,10 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── Telegram Bot API ───────────────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/telegram.yaml.
-  # Binary bound to hermes (Python) instead of node.
   telegram:
     name: telegram
     endpoints:
@@ -91,7 +94,7 @@ network_policies:
           - allow: { method: GET, path: "/bot*/**" }
           - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── Discord API + gateway + CDN ────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/discord.yaml.
@@ -130,4 +133,4 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }

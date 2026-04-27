@@ -18,10 +18,8 @@
 # WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
 # change field names without verifying against
 # `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
-# Messaging endpoints are bound to `/usr/local/bin/hermes` (Python) instead
-# of `/usr/local/bin/node` — this is the only intentional divergence from the
-# NemoClaw preset shape. (Relocated from /root/.local/bin in v0.3.2 so the
-# OpenShell sandbox user can execute it; see issue #3.)
+# Endpoints are bound to `/usr/bin/python3*` (the actual Python interpreter
+# binary) instead of `/usr/local/bin/node` — Hermes is Python, not Node.js.
 #
 # Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/policy-permissive.yaml --wait
@@ -37,15 +35,21 @@ filesystem_policy:
     - /lib64
     - /bin
     - /etc/ssl
+    - /etc/openshell-tls     # OpenShell proxy CA cert (for TLS interception)
     - /etc/resolv.conf
     - /etc/passwd
     - /etc/group
+    - /opt/hermes            # Hermes installation (sandbox user reads, not writes)
+    - /opt/nvm               # nvm / Node.js (for Node.js-based MCP servers)
+    - /opt/mcp-atlassian     # mcp-atlassian venv (skipped if absent)
+    - /dev/urandom           # Python secrets, random, uuid, hashlib
     - /sandbox/knowledge     # user knowledge docs (mounted ro)
     - /sandbox/configs       # persona + hermes config (mounted ro)
   read_write:
-    - /opt/hermes-data       # Hermes memories, skills, auth
+    - /opt/data              # Hermes memories, skills, auth
     - /sandbox               # agent working directory
     - /tmp
+    - /dev/null              # required by Python subprocess, nvm, shell redirections
 
 landlock:
   compatibility: best_effort
@@ -74,7 +78,7 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── Telegram Bot API ───────────────────────────────────────────────────
   telegram:
@@ -89,7 +93,7 @@ network_policies:
           - allow: { method: GET, path: "/bot*/**" }
           - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── Discord ────────────────────────────────────────────────────────────
   discord:
@@ -124,7 +128,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── Slack ──────────────────────────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/slack.yaml. Task spec
@@ -165,7 +169,7 @@ network_policies:
         port: 443
         access: full
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── HuggingFace Hub / LFS / Inference ──────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/huggingface.yaml.
@@ -188,7 +192,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── GitHub ─────────────────────────────────────────────────────────────
   # Read/write API + raw content fetch. Binary-bound to hermes so arbitrary
@@ -223,7 +227,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
 
   # ── DuckDuckGo web search (GET only) ───────────────────────────────────
   # Read-only web search. No POST — prevents using DDG as an exfil sink.
@@ -245,4 +249,4 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /usr/bin/python3* }
