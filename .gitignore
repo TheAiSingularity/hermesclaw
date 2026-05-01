@@ -19,6 +19,14 @@ __pycache__/
 *.egg-info/
 .venv/
 
+# Local MCP configuration
+configure-mcp.sh
+
+# Node
+node_modules/
+cli/dist/
+*.log
+
 # macOS
 .DS_Store
 
@@ -26,6 +34,3 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
-
-# Promotion content (personal, not for the repo)
-docs/promotion.md

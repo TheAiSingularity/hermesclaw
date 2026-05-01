@@ -403,7 +403,7 @@ N_GPU_LAYERS=99
 |----------|---------|-------------|
 | `MODEL_FILE` | `Qwen3-4B-Q4_K_M.gguf` | Model filename in `models/` |
 | `N_GPU_LAYERS` | `0` | GPU layers (0 = CPU, 99 = all GPU) |
-| `CTX_SIZE` | `8192` | Context window size |
+| `CTX_SIZE` | `32768` | Context window for llama-server (ignored by Ollama) |
 | `LLAMA_PORT` | `8080` | llama.cpp port |
 | `HERMESCLAW_PORT` | `8090` | HermesClaw gateway webhook port |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |

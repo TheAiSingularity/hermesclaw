@@ -23,6 +23,13 @@ model:
   # Docker path: OPENAI_BASE_URL env var overrides this automatically
   base_url: http://inference.local
 
+  # Context window size (input + output tokens combined).
+  # Hermes auto-detects this from the provider's /v1/models endpoint, but
+  # may get the model's native context (e.g. 128K) rather than a runtime
+  # override (e.g. Ollama num_ctx=262144). Set explicitly if auto-detection
+  # is wrong. See 10b-configure-hermes.sh for deployment-specific overrides.
+  # context_length: 131072
+
   # Auxiliary models for specific tasks (optional — falls back to main model)
   # Each can use a different provider/model for cost/quality optimization.
   # vision_model: anthropic/claude-sonnet-4-6   # For image analysis
@@ -148,6 +155,10 @@ sessions:
   # Compress context when it fills to this % of the model's context window
   compression:
     enabled: true
+    # Threshold is capped by the compression model's own context window.
+    # If your compression model has a smaller context than the main model,
+    # lower this so (threshold × context_length) < compression model's limit.
+    # See 10b-configure-hermes.sh for deployment-specific overrides.
     threshold: 0.75              # Compress when context reaches 75% full
 
   # Full-text search over all past sessions (FTS5-backed SQLite)

@@ -14,24 +14,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: cli/package-lock.json
+
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Bash syntax check
-        run: |
-          bash -n scripts/hermesclaw
-          bash -n scripts/lib/hermesclaw-helpers.sh
+        run: bash -n scripts/install.sh
 
       - name: ShellCheck lint
+        run: shellcheck -x -s bash scripts/install.sh
+
+      - name: CLI — Install
+        working-directory: cli
+        run: npm ci
+
+      - name: CLI — Type check
+        working-directory: cli
+        run: npx tsc --noEmit
+
+      - name: CLI — Unit tests
+        working-directory: cli
+        run: npx vitest run
+
+      - name: YAML validation
         run: |
-          shellcheck -x -s bash scripts/hermesclaw
-          shellcheck -x -s bash scripts/lib/hermesclaw-helpers.sh
-
-      - name: Test — Registry and validation
-        run: bash scripts/test-registry.sh
-
-      - name: Test — CLI dispatch
-        run: bash scripts/test-dispatch.sh
-
-      - name: Test — Credential detection
-        run: bash scripts/test-credentials.sh
+          python3 -c "
+          import yaml, sys, glob
+          for f in glob.glob('openshell/**/*.yaml', recursive=True):
+              try:
+                  yaml.safe_load(open(f))
+              except yaml.YAMLError as e:
+                  print(f'ERR {f}: {e}')
+                  sys.exit(1)
+          print('All YAML files valid')
+          "

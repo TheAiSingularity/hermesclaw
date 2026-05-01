@@ -19,7 +19,7 @@ labels: bug
 ## Doctor output
 
 ```
-# Paste output of: ./scripts/doctor.sh --quick
+# Paste output of: hermesclaw doctor --quick
 ```
 
 ## Steps to reproduce

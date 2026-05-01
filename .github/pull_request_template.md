@@ -15,18 +15,18 @@
 <!-- What did you run? Paste relevant output below. -->
 
 ```
-# ./scripts/doctor.sh --quick output:
+# hermesclaw doctor --quick output:
 
-# ./scripts/test.sh --quick output (last 10 lines):
+# cd cli && npm test output (last 10 lines):
 ```
 
 ## Checklist
 
-- [ ] `./scripts/doctor.sh --quick` passes with no new `FAIL` entries
-- [ ] `./scripts/test.sh --quick` runs to completion
+- [ ] `hermesclaw doctor --quick` passes with no new FAIL entries
+- [ ] `cd cli && npm test` passes
 - [ ] `shellcheck` passes on any modified shell scripts
-- [ ] All modified YAML files parse without errors (`python3 -c "import yaml; yaml.safe_load(open('file.yaml'))"`)
-- [ ] `docs/test-results.md` regenerated if feature coverage changed (`./scripts/test.sh --quick`)
+- [ ] All modified YAML files parse without errors
+- [ ] `docs/test-results.md` regenerated if feature coverage changed (`bash benchmarks/compare-features.sh --quick`)
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] Docs updated in `docs/features.md` if a feature was added or removed
 

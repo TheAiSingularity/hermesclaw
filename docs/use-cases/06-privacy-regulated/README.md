@@ -105,11 +105,9 @@ curl http://localhost:8080/health   # should return {"status":"ok"}
 ### Step 4 — Register the profile and start the sandbox
 
 ```bash
-./scripts/setup.sh
-# Registers hermesclaw profile with OpenShell
-
-hermesclaw start --policy strict
-# Creates sandbox hermesclaw-1 with the strict policy
+hermesclaw onboard
+# Registers hermesclaw profile with OpenShell, configures inference,
+# selects the 'restricted' tier, and creates the sandbox.
 ```
 
 ---

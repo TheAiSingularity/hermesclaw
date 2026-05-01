@@ -220,9 +220,9 @@ The agent's `OPENAI_API_KEY` is set to the literal string `not-needed` — that 
 
 ### Other concrete integration work (not a security layer, but worth knowing)
 
-- **[scripts/hermesclaw](../scripts/hermesclaw)** — CLI that wraps `openshell sandbox create --policy ... -- hermes gateway`, handles policy-set / start / stop / doctor.
-- **[scripts/setup.sh](../scripts/setup.sh)** — registers policies and profile with OpenShell on first run.
-- **[scripts/doctor.sh](../scripts/doctor.sh)** — end-to-end diagnostic: kernel version, Landlock presence, OpenShell gateway, sandbox state.
+- **[cli/](../cli/)** — Node.js/TypeScript CLI that wraps `openshell sandbox create`, handles policy management, onboarding, and diagnostics.
+- **`hermesclaw onboard`** — registers policies and profile with OpenShell, configures inference, creates the sandbox.
+- **`hermesclaw doctor`** — end-to-end diagnostic: kernel version, Landlock presence, OpenShell gateway, sandbox state, inference health.
 - **[docker-compose.yml](../docker-compose.yml)** — a *fallback* mode on hosts without OpenShell (macOS, no NVIDIA). Runs Hermes in a Docker container with namespace + capability-drop isolation. This is **not** kernel-level enforcement — it's a best-effort substitute.
 
 ---
@@ -262,7 +262,7 @@ On macOS (and on Linux without OpenShell), [docker-compose.yml](../docker-compos
 - **No** OpenShell seccomp profile (Docker applies its own default)
 - **No** OPA + L7 proxy — egress is at Docker network level, not per-request
 
-Docker mode is honest isolation, but it is not kernel-level in the sense this document uses. The [README](../README.md) is explicit about this; the test runner [scripts/test-uc-06.sh](../scripts/test-uc-06.sh) refuses to claim full enforcement on macOS and prints `warn "PARTIAL TEST: macOS cannot enforce Landlock/Seccomp."`.
+Docker mode is honest isolation, but it is not kernel-level in the sense this document uses. The [README](../README.md) is explicit about this; the benchmark runner [benchmarks/uc-06.sh](../benchmarks/uc-06.sh) refuses to claim full enforcement on macOS and prints `warn "PARTIAL TEST: macOS cannot enforce Landlock/Seccomp."`.
 
 ### 6. Hardware validation is unconfirmed
 
@@ -392,7 +392,7 @@ OpenShell is a valuable runtime, but it is not the only kernel-level option. Abs
 - [openshell/hermesclaw-profile.yaml](../openshell/hermesclaw-profile.yaml) — bundles image + policy + mounts + inference.
 - [docs/features.md](features.md) — summary feature reference.
 - [docs/use-cases/06-privacy-regulated/](use-cases/06-privacy-regulated/) — end-to-end HIPAA / compliance scenario.
-- [scripts/doctor.sh](../scripts/doctor.sh) — diagnostic that verifies layer-by-layer setup.
+- `hermesclaw doctor` — diagnostic that verifies layer-by-layer setup.
 
 **Related external reading:**
 - NVIDIA's [practical security guidance for sandboxing agentic workflows](https://developer.nvidia.com/blog/practical-security-guidance-for-sandboxing-agentic-workflows-and-managing-execution-risk/).

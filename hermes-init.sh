@@ -23,3 +23,14 @@ done
 
 # Append MCP server blocks based on runtime credentials + baked-in URLs
 [ -x /usr/local/bin/configure-mcp.sh ] && /usr/local/bin/configure-mcp.sh
+
+# Configure git to trust the OpenShell TLS proxy CA and authenticate via
+# GITLAB_TOKEN so that `git clone/push` work without manual intervention.
+OPENSHELL_CA="/etc/openshell-tls/openshell-ca.pem"
+if [ -f "$OPENSHELL_CA" ]; then
+  git config --global http.sslCAInfo "$OPENSHELL_CA"
+fi
+if [ -n "${GITLAB_TOKEN:-}" ] && [ -n "${GITLAB_URL:-}" ]; then
+  git config --global credential.helper \
+    "!f() { echo username=oauth2; echo password=\$GITLAB_TOKEN; }; f"
+fi

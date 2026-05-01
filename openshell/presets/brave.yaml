@@ -1,0 +1,13 @@
+network_policies:
+  brave:
+    name: brave
+    endpoints:
+      - host: api.search.brave.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        tls: terminate
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /usr/bin/python3* }

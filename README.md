@@ -23,7 +23,7 @@ NVIDIA built OpenShell to hardware-enforce AI agent behavior — blocking networ
   - [Build from source](#build-from-source-if-you-want-to-modify-hermesclaw-itself)
   - [OpenShell sandbox (full hardware enforcement)](#openshell-sandbox-full-hardware-enforcement)
 - [What OpenShell Enforces](#what-openshell-enforces)
-- [Policy Presets](#policy-presets)
+- [Policy Tiers & Presets](#policy-tiers--presets)
 - [Hermes Features](#hermes-features-inside-the-sandbox)
 - [Skills Library](#skills-library)
 - [Use Cases](#use-cases)
@@ -51,31 +51,23 @@ OpenShell intercepts every call to `inference.local` inside the sandbox and rout
 
 ### Recommended — one-command install
 
-Installs the prebuilt image (multi-arch, `linux/amd64` + `linux/arm64`) from GitHub Container Registry, clones the repo to `~/.hermesclaw`, symlinks the `hermesclaw` CLI to `/usr/local/bin`, and prints your next steps:
+Clones the repo to `~/.hermesclaw`, installs Node.js (via nvm) if needed, builds the `hermesclaw` CLI, and launches the interactive **onboard wizard** which walks you through provider selection, model configuration, policy tier, and sandbox creation:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TheAiSingularity/hermesclaw/main/scripts/install.sh | bash
 ```
 
-Prerequisites: `docker`, `git`, `curl`. Docker Desktop (macOS / Windows) or `dockerd` (Linux) must be running.
+Prerequisites: `docker`, `git`, `curl`. Docker Desktop (macOS / Windows) or `dockerd` (Linux) must be running. Node.js >= 20 is installed automatically if missing.
 
-After `install.sh` completes, three manual steps remain (model weights, llama-server, start the sandbox):
+The onboard wizard configures everything interactively. Once complete:
 
 ```bash
-# 1. Download a GGUF model (example: Qwen3 4B, ~2.5 GB)
-curl -L -o ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf \
-  https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf
-
-# 2. Start llama-server on the host  (macOS shown; Linux: build llama.cpp from source)
-brew install llama.cpp
-llama-server -m ~/.hermesclaw/models/Qwen3-4B-Q4_K_M.gguf --port 8080 --ctx-size 32768 -ngl 99
-
-# 3. Start HermesClaw (creates a named sandbox)
-hermesclaw mybot start
 hermesclaw mybot chat "hello"
+hermesclaw list                    # see all sandboxes
+hermesclaw mybot snapshot create   # point-in-time backup
 ```
 
-> **Why `--ctx-size 32768`?** Hermes's system prompt alone is ~11k tokens; lower context windows cause overflow on every query.
+To re-run onboard later (e.g. switch providers): `hermesclaw onboard`.
 
 ---
 
@@ -84,9 +76,8 @@ hermesclaw mybot chat "hello"
 ```bash
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
-cp .env.example .env                 # edit MODEL_FILE and any messaging tokens
-./scripts/setup.sh                   # builds hermesclaw:latest locally
-# ... then steps 2 and 3 above
+cd cli && npm install && npm run build && npm link && cd ..
+hermesclaw onboard
 ```
 
 ---
@@ -99,11 +90,8 @@ Requires Linux + NVIDIA GPU + OpenShell installed.
 # Install OpenShell (requires NVIDIA account)
 curl -fsSL https://www.nvidia.com/openshell.sh | bash
 
-# Install HermesClaw via the one-liner above, then:
-cd ~/.hermesclaw
-llama-server -m models/your-model.gguf --port 8080 --ctx-size 32768 -ngl 99 &
-hermesclaw mybot start                          # default: strict policy
-hermesclaw mybot start --gpu --policy gateway   # GPU + messaging enabled
+# Install HermesClaw via the one-liner above — the onboard wizard
+# detects OpenShell and configures the sandbox automatically.
 hermesclaw mybot chat "hello"
 hermesclaw list                                 # see all sandboxes
 hermesclaw mybot snapshot create                # point-in-time backup
@@ -126,21 +114,38 @@ All four layers are enforced **out-of-process** — even a fully compromised Her
 
 ---
 
-## Policy Presets
+## Policy Tiers & Presets
 
-Switch security posture **without restarting** the sandbox:
+The onboard wizard selects a **policy tier** which determines the default set of network presets. You can add or remove individual presets at any time **without restarting** the sandbox:
 
 ```bash
-hermesclaw mybot policy-set strict      # inference only (default)
-hermesclaw mybot policy-set gateway     # + Telegram + Discord
-hermesclaw mybot policy-set permissive  # + web search + GitHub skills
+hermesclaw mybot policy add github     # allow GitHub API access
+hermesclaw mybot policy remove slack   # revoke Slack access
+hermesclaw mybot policy list           # show active presets
 ```
 
-| Preset | Inference | Telegram / Discord | Web Search | GitHub Skills |
-|--------|:---------:|:------------------:|:----------:|:-------------:|
-| `strict` | ✅ | ❌ | ❌ | ❌ |
-| `gateway` | ✅ | ✅ | ❌ | ❌ |
-| `permissive` | ✅ | ✅ | ✅ | ✅ |
+### Tiers (selected during onboard)
+
+| Tier | Default Presets | Description |
+|------|----------------|-------------|
+| `restricted` | *(none)* | Inference only — no external network access |
+| `balanced` | npm, pypi, huggingface, brave, github | Development + research |
+| `open` | balanced + slack, discord, telegram | Full messaging + development |
+
+### Available Presets
+
+| Preset | Access Granted |
+|--------|---------------|
+| `npm` | npm / Yarn registries |
+| `pypi` | PyPI package index |
+| `huggingface` | Hugging Face Hub + CDN |
+| `brave` | Brave Search API |
+| `github` | GitHub API + raw content |
+| `slack` | Slack API + websocket gateway |
+| `discord` | Discord API + gateway + CDN |
+| `telegram` | Telegram Bot API |
+
+Presets are composable YAML fragments in `openshell/presets/`. Each is merged with `openshell/baseline.yaml` to produce the active policy.
 
 ---
 
@@ -233,32 +238,38 @@ Sandboxes are named. Use `hermesclaw <name> <command>` or omit the name to use t
 
 ```
 GLOBAL COMMANDS
-  hermesclaw onboard                    First-time setup and prerequisite check
+  hermesclaw onboard                    First-time setup wizard (provider, model, policy, sandbox)
   hermesclaw list                       List registered sandboxes
   hermesclaw backup-all                 Snapshot every registered sandbox
-  hermesclaw doctor                     End-to-end diagnostic
+  hermesclaw doctor [--quick]           End-to-end diagnostic
+  hermesclaw credentials [list|reset]   Manage stored API keys
   hermesclaw version                    Print version
   hermesclaw uninstall                  Remove HermesClaw (data preserved)
 
 SANDBOX COMMANDS  (hermesclaw [<name>] <command>)
-  start [--gpu] [--policy PRESET]       Create and start sandbox via OpenShell
+  start [--gpu]                         Create and start sandbox via OpenShell
   stop                                  Stop sandbox (memories + skills preserved)
   status                                Show inference config + memory/skill counts
   connect                               Open interactive shell inside sandbox
   logs [--follow]                       Stream sandbox logs
-  policy-list                           List available policy presets
-  policy-set PRESET                     Hot-swap policy without restart
+  destroy                               Remove sandbox (memories preserved in snapshots)
   chat "prompt"                         One-shot message to Hermes
+
+POLICY COMMANDS  (hermesclaw [<name>] policy <subcommand>)
+  policy list                           Show active presets for this sandbox
+  policy add PRESET                     Enable a network preset (e.g. github, slack)
+  policy remove PRESET                  Disable a network preset
 
 LIFECYCLE COMMANDS  (hermesclaw [<name>] <command>)
   snapshot [create|list|restore [PREFIX]]  Manage point-in-time snapshots
   backup                                Alias for snapshot create
   restore [PREFIX]                      Alias for snapshot restore
-  rebuild [--policy P]                  Snapshot → destroy → recreate → restore
+  rebuild                               Snapshot → destroy → recreate → restore
 
 EXAMPLES
-  hermesclaw mybot start --policy gateway
+  hermesclaw onboard
   hermesclaw mybot chat "Hello Hermes"
+  hermesclaw mybot policy add github
   hermesclaw mybot snapshot create
   hermesclaw mybot rebuild
   hermesclaw list
@@ -283,15 +294,34 @@ Edit `configs/persona.yaml` — set your name, role, expertise, ticker watchlist
 hermesclaw/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                      # Syntax, ShellCheck, and test CI
-├── Dockerfile                          # Hermes Agent on debian:bookworm-slim
-├── .env.example                        # MODEL_FILE, CTX_SIZE, bot tokens
+│       └── ci.yml                      # Syntax, lint, and test CI
+├── Dockerfile                          # Hermes Agent (pinned base image + build ARGs)
+├── .env.example                        # CTX_SIZE (llama-server only, ignored by Ollama), bot tokens
+├── cli/                                # Node.js/TypeScript CLI (hermesclaw command)
+│   ├── package.json                   # hermesclaw npm package
+│   ├── tsconfig.json
+│   ├── vitest.config.ts
+│   └── src/
+│       ├── index.ts                   # Commander entry point
+│       ├── commands/                  # onboard, chat, policy, doctor, etc.
+│       └── lib/                       # registry, credentials, policy, providers, etc.
 ├── openshell/
-│   ├── hermesclaw-policy.yaml          # Default policy
-│   ├── hermesclaw-profile.yaml         # Sandbox profile
-│   ├── policy-strict.yaml             # Inference only
-│   ├── policy-gateway.yaml            # Inference + Telegram + Discord
-│   └── policy-permissive.yaml         # Everything
+│   ├── baseline.yaml                  # Base sandbox policy (filesystem, process, inference)
+│   ├── tiers.yaml                     # Tier definitions (restricted, balanced, open)
+│   ├── presets/                       # Composable network presets
+│   │   ├── npm.yaml                   # npm / Yarn registries
+│   │   ├── pypi.yaml                  # PyPI
+│   │   ├── brave.yaml                 # Brave Search API
+│   │   ├── huggingface.yaml           # Hugging Face Hub
+│   │   ├── github.yaml                # GitHub API
+│   │   ├── slack.yaml                 # Slack API + websocket
+│   │   ├── discord.yaml               # Discord API + gateway
+│   │   └── telegram.yaml              # Telegram Bot API
+│   ├── hermesclaw-policy.yaml         # Legacy default policy
+│   ├── hermesclaw-profile.yaml        # Sandbox profile
+│   ├── policy-strict.yaml             # Legacy: inference only
+│   ├── policy-gateway.yaml            # Legacy: inference + messaging
+│   └── policy-permissive.yaml         # Legacy: everything
 ├── configs/
 │   ├── hermes.yaml.example            # Full Hermes config
 │   └── persona.yaml.example           # User persona
@@ -304,23 +334,16 @@ hermesclaw/
 │   ├── home-assistant/                # HA MCP control
 │   └── research-digest/               # Weekly arXiv digest
 ├── scripts/
-│   ├── hermesclaw                     # Main CLI
-│   ├── lib/
-│   │   └── hermesclaw-helpers.sh      # Registry, validation, credential check
-│   ├── setup.sh                       # One-time setup
-│   ├── start.sh / stop.sh / status.sh
-│   ├── doctor.sh                      # End-to-end diagnostic
-│   ├── test.sh                        # Feature comparison test suite
-│   ├── test-registry.sh              # Registry & validation tests
-│   ├── test-dispatch.sh              # CLI dispatch tests
-│   ├── test-credentials.sh           # Credential detection tests
-│   ├── test-setup.sh                  # Use-case test environment setup
-│   └── test-uc-01.sh … test-uc-07.sh  # Per-use-case automated tests
+│   └── install.sh                     # One-command installer (curl | bash)
+├── benchmarks/
+│   ├── compare-features.sh            # HermesClaw vs NemoClaw feature matrix
+│   ├── compare-setup.sh              # Comparison test environment setup
+│   └── uc-01.sh … uc-07.sh           # Per-use-case comparison scripts
 ├── docs/
 │   ├── use-cases/                     # 7 end-to-end use-case guides
 │   ├── features.md                    # Full feature reference
 │   ├── test-results.md                # Feature comparison table
-│   └── test-results-uc.md             # Use-case test results (2026-03-31)
+│   └── test-results-uc.md             # Use-case comparison results
 ├── knowledge/                         # Drop documents here (RAG context, read-only mount)
 └── models/                            # Drop .gguf model weights here
 ```
@@ -330,19 +353,20 @@ hermesclaw/
 ## Diagnostics & Testing
 
 ```bash
-# Check your environment
-./scripts/doctor.sh           # full diagnostic
-./scripts/doctor.sh --quick   # skip slow checks
+# Check your environment (provider-aware inference health, policy validation, etc.)
+hermesclaw doctor              # full diagnostic
+hermesclaw doctor --quick      # skip slow checks (chat smoke test, DNS probe)
 
-# Run the feature test suite
-./scripts/test.sh             # generates docs/test-results.md
-./scripts/test.sh --quick     # skip live inference tests
+# Run CLI unit tests
+cd cli && npm test
 
-# Run use-case tests
-bash scripts/test-setup.sh          # verify environment
-bash scripts/test-uc-01.sh          # researcher
-bash scripts/test-uc-04.sh          # data analyst (Postgres + anomaly detection)
-bash scripts/test-uc-07.sh          # trader (latency measurement)
+# HermesClaw vs NemoClaw comparison benchmarks
+bash benchmarks/compare-features.sh          # generates docs/test-results.md
+bash benchmarks/compare-features.sh --quick  # skip live inference probes
+bash benchmarks/compare-setup.sh             # set up comparison environment
+bash benchmarks/uc-01.sh                     # researcher use case
+bash benchmarks/uc-04.sh                     # data analyst (Postgres + anomaly detection)
+bash benchmarks/uc-07.sh                     # trader (latency measurement)
 ```
 
 ---
@@ -354,15 +378,14 @@ HermesClaw welcomes contributions — especially:
 - **OpenShell policy corrections** — if you have access to a real OpenShell environment, correctness fixes are the highest-value contribution
 - **New policy presets** — homeassistant, coding, research, etc.
 - **New skills** — follow the `SKILL.md` format in any existing skill as a template
-- **Real-world test reports** — if you've run HermesClaw on NVIDIA hardware, share your `./scripts/doctor.sh` output
+- **Real-world test reports** — if you've run HermesClaw on NVIDIA hardware, share your `hermesclaw doctor` output
 
 **Quick contributor setup:**
 ```bash
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
-./scripts/doctor.sh --quick    # verify your environment
-./scripts/test.sh --quick      # run the feature test suite
-shellcheck scripts/hermesclaw  # lint before submitting
+cd cli && npm install && npm test && cd ..   # build + test the CLI
+hermesclaw doctor --quick                    # verify your environment
 ```
 
 Full guide: [CONTRIBUTING.md](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md)

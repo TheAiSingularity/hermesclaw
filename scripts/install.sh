@@ -1,39 +1,33 @@
 #!/usr/bin/env bash
-# HermesClaw — one-command install.
+# HermesClaw — one-command install + onboard.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/TheAiSingularity/hermesclaw/main/scripts/install.sh | bash
 #
-# What it does (idempotent, non-interactive):
+# What it does:
 #   1. Verifies bash, curl, docker, git are present and the Docker daemon is running.
-#   2. Clones (or updates, if clean) the repo at $HERMESCLAW_HOME (default ~/.hermesclaw).
-#   3. Pulls the prebuilt image from GHCR and tags it locally as hermesclaw:latest.
-#   4. Bootstraps .env from .env.example.
-#   5. Symlinks $HERMESCLAW_HOME/scripts/hermesclaw into $HERMESCLAW_BIN_DIR
-#      (default /usr/local/bin) if writable, otherwise prints PATH instructions.
-#   6. Prints the three remaining manual steps (model download, llama-server, docker compose).
+#   2. Installs Node.js (via nvm) if not already present.
+#   3. Clones (or updates, if clean) the repo at $HERMESCLAW_HOME (default ~/.hermesclaw).
+#   4. Builds the Node.js CLI (npm install + build) and links it globally.
+#   5. Runs `hermesclaw onboard` to configure inference, policy, and create the sandbox.
 #
 # Overrides (env vars):
-#   HERMESCLAW_HOME      — install location (default: ~/.hermesclaw)
-#   HERMESCLAW_BIN_DIR   — where to symlink the CLI (default: /usr/local/bin)
-#   HERMESCLAW_IMAGE     — override the pulled image (default: ghcr.io/theaisingularity/hermesclaw:latest)
-#   HERMESCLAW_REF       — git ref to check out (default: main)
-#
-# Notes:
-#   - This script is intentionally non-interactive so `| bash` works reliably.
-#   - It does NOT download model weights or start llama-server — those are deliberate
-#     manual steps, documented at the end.
+#   HERMESCLAW_HOME         — install location (default: ~/.hermesclaw)
+#   HERMESCLAW_REF          — git ref to check out (default: main)
+#   HERMESCLAW_PROVIDER     — skip provider prompt (non-interactive onboard)
+#   HERMESCLAW_MODEL        — skip model prompt (non-interactive onboard)
+#   HERMESCLAW_POLICY_TIER  — skip tier prompt (non-interactive onboard)
+#   HERMESCLAW_SKIP_ONBOARD — set to 1 to install without running onboard
 
 set -euo pipefail
 
 REPO_URL="${HERMESCLAW_REPO_URL:-https://github.com/TheAiSingularity/hermesclaw.git}"
 REF="${HERMESCLAW_REF:-main}"
-IMAGE="${HERMESCLAW_IMAGE:-ghcr.io/theaisingularity/hermesclaw:latest}"
 INSTALL_DIR="${HERMESCLAW_HOME:-$HOME/.hermesclaw}"
-BIN_DIR="${HERMESCLAW_BIN_DIR:-/usr/local/bin}"
+NODE_MIN_VERSION=20
 
 BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
-CYAN='\033[0;36m'; DIM='\033[2m'; RESET='\033[0m'
+CYAN='\033[0;36m'; RESET='\033[0m'
 
 say()     { printf "%b\n" "$*"; }
 ok()      { say "  ${GREEN}✓${RESET} $*"; }
@@ -51,10 +45,39 @@ if ! docker info >/dev/null 2>&1; then
 fi
 ok "bash, curl, docker, git present; Docker daemon running"
 
-# ── 2. Clone or update repo ───────────────────────────────────────────────────
+# ── 2. Install Node.js if missing ─────────────────────────────────────────────
+heading "Checking Node.js"
+
+_node_version_ok() {
+    if ! command -v node >/dev/null 2>&1; then return 1; fi
+    local ver
+    ver=$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)
+    [ -n "$ver" ] && [ "$ver" -ge "$NODE_MIN_VERSION" ]
+}
+
+if _node_version_ok; then
+    ok "Node.js $(node --version) already installed"
+else
+    say "  Node.js >= ${NODE_MIN_VERSION} not found. Installing via nvm..."
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+        curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    fi
+    # shellcheck source=/dev/null
+    . "$NVM_DIR/nvm.sh"
+    nvm install "$NODE_MIN_VERSION"
+    nvm use "$NODE_MIN_VERSION"
+
+    if _node_version_ok; then
+        ok "Node.js $(node --version) installed via nvm"
+    else
+        err "Failed to install Node.js >= $NODE_MIN_VERSION. Install manually and retry."
+    fi
+fi
+
+# ── 3. Clone or update repo ───────────────────────────────────────────────────
 heading "Fetching HermesClaw sources into $INSTALL_DIR"
 if [ -d "$INSTALL_DIR/.git" ]; then
-    # Existing checkout — only update if clean. Never blow away local changes.
     if ! git -C "$INSTALL_DIR" diff --quiet HEAD -- 2>/dev/null; then
         warn "Existing checkout at $INSTALL_DIR has local changes; skipping update."
         warn "Commit or stash and re-run, or set HERMESCLAW_HOME to a fresh path."
@@ -70,66 +93,59 @@ else
     ok "Cloned $REPO_URL ($REF) to $INSTALL_DIR"
 fi
 
-# ── 3. Pull prebuilt image and tag locally ────────────────────────────────────
-heading "Pulling container image"
-# Retry pull once on transient GHCR hiccups.
-if ! docker pull "$IMAGE" >/dev/null 2>&1; then
-    warn "First pull failed; retrying once..."
-    docker pull "$IMAGE" >/dev/null || err "Could not pull $IMAGE. Check network and try: docker pull $IMAGE"
-fi
-# Local-name tag so existing docker-compose.yml (image: hermesclaw:latest) works without rebuild.
-docker tag "$IMAGE" hermesclaw:latest
-ok "Pulled $IMAGE; tagged locally as hermesclaw:latest"
-
 # ── 4. Bootstrap .env ─────────────────────────────────────────────────────────
 if [ ! -f "$INSTALL_DIR/.env" ] && [ -f "$INSTALL_DIR/.env.example" ]; then
     cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
     ok "Created $INSTALL_DIR/.env from .env.example"
 fi
 
-# ── 5. Install the CLI ────────────────────────────────────────────────────────
-heading "Installing hermesclaw CLI"
-CLI_SRC="$INSTALL_DIR/scripts/hermesclaw"
-CLI_DST="$BIN_DIR/hermesclaw"
-chmod +x "$CLI_SRC" 2>/dev/null || true
-if [ -w "$BIN_DIR" ] || [ "${EUID:-$(id -u)}" = "0" ]; then
-    ln -sf "$CLI_SRC" "$CLI_DST"
-    ok "Symlinked $CLI_DST → $CLI_SRC"
+# ── 5. Build and link the Node.js CLI ─────────────────────────────────────────
+heading "Building HermesClaw CLI"
+cd "$INSTALL_DIR/cli"
+npm install --no-fund --no-audit 2>&1 | tail -1
+npm run build 2>&1 | tail -1
+ok "CLI built at $INSTALL_DIR/cli/dist/"
+
+heading "Installing hermesclaw CLI globally"
+if npm link 2>/dev/null; then
+    ok "hermesclaw linked globally via npm"
 elif command -v sudo >/dev/null 2>&1; then
-    warn "$BIN_DIR is not writable; attempting sudo symlink (will prompt once)."
-    if sudo ln -sf "$CLI_SRC" "$CLI_DST"; then
-        ok "Symlinked (via sudo) $CLI_DST → $CLI_SRC"
+    warn "npm link failed; retrying with sudo..."
+    if sudo npm link 2>/dev/null; then
+        ok "hermesclaw linked globally via sudo npm link"
     else
-        warn "sudo symlink failed. Add this to your shell profile instead:"
-        say "    export PATH=\"$INSTALL_DIR/scripts:\$PATH\""
+        warn "Global link failed. Add to your PATH manually:"
+        say "    export PATH=\"$INSTALL_DIR/cli/node_modules/.bin:\$PATH\""
     fi
 else
-    warn "$BIN_DIR is not writable and sudo is unavailable. Add to PATH manually:"
-    say "    export PATH=\"$INSTALL_DIR/scripts:\$PATH\""
+    warn "npm link failed and sudo unavailable. Add to PATH manually:"
+    say "    export PATH=\"$INSTALL_DIR/cli/node_modules/.bin:\$PATH\""
 fi
 
-# ── 6. Next steps ─────────────────────────────────────────────────────────────
-heading "Done"
-say ""
-say "HermesClaw installed at ${CYAN}$INSTALL_DIR${RESET}."
-say ""
-say "${BOLD}Next (three manual steps):${RESET}"
-say ""
-say "  ${CYAN}1. Download a GGUF model${RESET}"
-say "     ${DIM}# example (Qwen3 4B, ~2.5 GB):${RESET}"
-say "     curl -L -o $INSTALL_DIR/models/Qwen3-4B-Q4_K_M.gguf \\"
-say "       https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
-say ""
-say "  ${CYAN}2. Start llama-server on the host${RESET}"
-say "     ${DIM}# macOS:${RESET}"
-say "     brew install llama.cpp && \\"
-say "       llama-server -m $INSTALL_DIR/models/<your-model>.gguf --port 8080 --ctx-size 32768 -ngl 99"
-say "     ${DIM}# Linux — build from https://github.com/ggerganov/llama.cpp#build${RESET}"
-say ""
-say "  ${CYAN}3. Start HermesClaw${RESET}"
-say "     cd $INSTALL_DIR && docker compose up -d"
-say "     hermesclaw chat \"hello\""
-say ""
-say "${DIM}Full diagnostic: hermesclaw doctor${RESET}"
-say "${DIM}Policy presets:  hermesclaw policy-list${RESET}"
-say ""
+# Verify the CLI is available
+if ! command -v hermesclaw >/dev/null 2>&1; then
+    export PATH="$INSTALL_DIR/cli/node_modules/.bin:$PATH"
+fi
+
+if command -v hermesclaw >/dev/null 2>&1; then
+    ok "hermesclaw CLI available: $(which hermesclaw)"
+else
+    err "hermesclaw not found on PATH after install. Check the output above."
+fi
+
+# ── 6. Run onboard ────────────────────────────────────────────────────────────
+if [ "${HERMESCLAW_SKIP_ONBOARD:-}" = "1" ]; then
+    heading "Skipping onboard (HERMESCLAW_SKIP_ONBOARD=1)"
+    say ""
+    say "Run onboard manually when ready:"
+    say "  ${CYAN}hermesclaw onboard${RESET}"
+else
+    heading "Starting HermesClaw onboard"
+
+    ONBOARD_ARGS=()
+    if [ -n "${HERMESCLAW_PROVIDER:-}" ]; then
+        ONBOARD_ARGS+=(--non-interactive)
+    fi
+
+    hermesclaw onboard "${ONBOARD_ARGS[@]+"${ONBOARD_ARGS[@]}"}"
+fi

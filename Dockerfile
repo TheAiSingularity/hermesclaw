@@ -1,7 +1,12 @@
 # HermesClaw + OpenShell: based on official Hermes Agent image
 # hermes binary: /opt/hermes/.venv/bin/hermes (accessible to all users)
 # hermes data:   /opt/data/ (config, skills, memories)
-FROM nousresearch/hermes-agent:latest
+FROM nousresearch/hermes-agent:v2026.4.23 AS base
+ARG HERMES_VERSION="v2026.4.23"
+
+ARG HERMESCLAW_MODEL=""
+ARG HERMESCLAW_INFERENCE_BASE_URL="https://inference.local/v1"
+ARG HERMESCLAW_INFERENCE_API="openai-completions"
 
 USER root
 
@@ -47,6 +52,15 @@ RUN python3 -m venv /opt/mcp-atlassian && \
     /opt/mcp-atlassian/bin/pip install --no-cache-dir mcp-atlassian && \
     chmod -R a+rX /opt/mcp-atlassian
 
+# Pre-install TUI (React/Ink) dependencies. hermes --tui runs npm install
+# at first launch, but /opt/hermes is read-only in the sandbox so it fails.
+RUN if [ -f /opt/hermes/ui-tui/package.json ]; then \
+        . "$NVM_DIR/nvm.sh" && \
+        cd /opt/hermes/ui-tui && \
+        npm install --no-audit --no-fund && \
+        npm run build 2>/dev/null || true; \
+    fi
+
 # Ensure the hermes installation is world-readable/executable so the
 # OpenShell sandbox user can run hermes from SSH sessions
 RUN chmod -R a+rX /opt/hermes && \
@@ -83,12 +97,18 @@ RUN mkdir -p /usr/local/share/hermes-defaults && \
         "$CONFIG"
 
 ENV OPENAI_BASE_URL="https://inference.local/v1"
-ENV OPENAI_API_KEY="not-needed"
+
+RUN echo "${HERMES_VERSION}" > /etc/hermes-version
 
 WORKDIR /sandbox
 VOLUME ["/opt/data", "/sandbox"]
 
-# Init script: fix PVC ownership, seed config files, generate MCP config
+# Bake build-time inference config into the image for entrypoint patching
+ENV HERMESCLAW_MODEL_DEFAULT="${HERMESCLAW_MODEL}"
+ENV HERMESCLAW_INFERENCE_BASE_URL_DEFAULT="${HERMESCLAW_INFERENCE_BASE_URL}"
+ENV HERMESCLAW_INFERENCE_API_DEFAULT="${HERMESCLAW_INFERENCE_API}"
+
+# Init script: fix PVC ownership, seed config files, patch inference, generate MCP config
 RUN printf '#!/bin/sh\n\
 chown sandbox:sandbox /sandbox /opt/data 2>/dev/null\n\
 chmod g+rwx /opt/data 2>/dev/null\n\
@@ -99,7 +119,29 @@ for f in config.yaml .env SOUL.md; do\n\
   [ ! -f "/opt/data/$f" ] && [ -f "/usr/local/share/hermes-defaults/$f" ] && \\\n\
     cp "/usr/local/share/hermes-defaults/$f" "/opt/data/$f"\n\
 done\n\
+# Patch inference config from build ARGs or runtime overrides\n\
+MODEL="${HERMESCLAW_MODEL_OVERRIDE:-$HERMESCLAW_MODEL_DEFAULT}"\n\
+BASE_URL="${HERMESCLAW_INFERENCE_BASE_URL_OVERRIDE:-$HERMESCLAW_INFERENCE_BASE_URL_DEFAULT}"\n\
+if [ -n "$MODEL" ] && [ -f /opt/data/config.yaml ]; then\n\
+  sed -i "s|^\\( *\\)model: .*|\\1model: \\"$MODEL\\"|" /opt/data/config.yaml\n\
+fi\n\
+if [ -n "$BASE_URL" ] && [ -f /opt/data/config.yaml ]; then\n\
+  sed -i "s|^\\( *\\)base_url: .*|\\1base_url: \\"$BASE_URL\\"|" /opt/data/config.yaml\n\
+fi\n\
 [ -x /usr/local/bin/configure-mcp.sh ] && /usr/local/bin/configure-mcp.sh 2>/dev/null\n\
+# Pre-resolve Jira credentials in config.yaml. mcp-atlassian uses Basic auth\n\
+# which base64-encodes placeholders — the L7 proxy cannot resolve them.\n\
+# The real values are available as env vars injected by OpenShell providers.\n\
+if [ -f /opt/data/config.yaml ]; then\n\
+  _cfg=/opt/data/config.yaml\n\
+  for _placeholder in JIRA_USER JIRA_API_TOKEN GITLAB_TOKEN; do\n\
+    _val=$(eval echo "\\${${_placeholder}:-}")\n\
+    if [ -n "$_val" ] && echo "$_val" | grep -qv "^openshell:resolve:"; then\n\
+      sed -i "s|openshell:resolve:env:${_placeholder}|${_val}|g" "$_cfg"\n\
+    fi\n\
+  done\n\
+  unset _cfg _placeholder _val\n\
+fi\n\
 chown -R sandbox:sandbox /opt/data 2>/dev/null\n\
 chmod -R g+rwX /opt/data 2>/dev/null\n\
 exec "$@"\n' > /usr/local/bin/entrypoint.sh && \

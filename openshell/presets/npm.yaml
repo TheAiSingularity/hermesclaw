@@ -1,0 +1,14 @@
+network_policies:
+  npm:
+    name: npm
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+        tls: skip
+      - host: registry.yarnpkg.com
+        port: 443
+        tls: skip
+    binaries:
+      - { path: /usr/local/bin/node }
+      - { path: /usr/local/bin/npm }
+      - { path: /usr/local/bin/npx }

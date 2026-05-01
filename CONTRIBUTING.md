@@ -39,8 +39,7 @@ The most valuable contributions are in this order:
 ### Report a bug
 
 Use the **Bug Report** issue template. Include:
-- Output of `./scripts/doctor.sh`
-- Output of `./scripts/hermesclaw doctor`
+- Output of `hermesclaw doctor`
 - Whether you're on OpenShell or Docker mode
 - OS and OpenShell version
 
@@ -69,6 +68,7 @@ If you work at NVIDIA or have access to OpenShell internals, correctness fixes t
 ### Prerequisites
 
 - Docker Desktop or Docker Engine
+- Node.js >= 20 (install via [nvm](https://github.com/nvm-sh/nvm) or your package manager)
 - bash 4+ (macOS: `brew install bash`)
 - git
 - Optional: NVIDIA GPU + OpenShell for full sandbox testing
@@ -79,14 +79,14 @@ If you work at NVIDIA or have access to OpenShell internals, correctness fixes t
 git clone https://github.com/TheAiSingularity/hermesclaw
 cd hermesclaw
 
-# Run diagnostics on the repo itself (no model needed)
-./scripts/doctor.sh --quick
+# Build and test the CLI
+cd cli && npm install && npm test && cd ..
 
-# Run the feature comparison test suite
-./scripts/test.sh --quick
+# Run diagnostics (no model needed)
+hermesclaw doctor --quick
 ```
 
-Both should complete without any `FAIL` entries (some `WARN` entries are expected if OpenShell/llama.cpp aren't installed).
+CLI tests should pass. Doctor may show `WARN` entries if OpenShell or an inference provider aren't installed yet.
 
 ### Validate YAML files
 
@@ -108,7 +108,7 @@ for f in glob.glob('**/*.yaml', recursive=True):
 
 ```bash
 # Requires: brew install shellcheck (macOS) or apt-get install shellcheck (Linux)
-shellcheck scripts/hermesclaw scripts/setup.sh scripts/start.sh scripts/status.sh scripts/doctor.sh scripts/test.sh
+shellcheck scripts/install.sh
 ```
 
 ### Test Docker build
@@ -172,27 +172,39 @@ A PR that fixes a policy YAML schema issue should only fix that. A PR that adds 
 
 ### Before every PR
 
-Run both scripts and make sure there are no new `FAIL` entries:
+Run both and make sure there are no new `FAIL` entries:
 
 ```bash
-./scripts/doctor.sh --quick
-./scripts/test.sh --quick
+cd cli && npm test && cd ..
+hermesclaw doctor --quick
 ```
 
 ### When changing policy YAML
 
 Validate the schema:
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('openshell/hermesclaw-policy.yaml'))"
-python3 -c "import yaml; yaml.safe_load(open('openshell/policy-strict.yaml'))"
-python3 -c "import yaml; yaml.safe_load(open('openshell/policy-gateway.yaml'))"
-python3 -c "import yaml; yaml.safe_load(open('openshell/policy-permissive.yaml'))"
+python3 -c "
+import yaml, sys, glob
+for f in glob.glob('openshell/**/*.yaml', recursive=True):
+    try:
+        yaml.safe_load(open(f))
+        print(f'OK  {f}')
+    except yaml.YAMLError as e:
+        print(f'ERR {f}: {e}')
+        sys.exit(1)
+"
 ```
 
 ### When changing shell scripts
 
 ```bash
-shellcheck scripts/hermesclaw scripts/setup.sh scripts/start.sh scripts/status.sh scripts/doctor.sh scripts/test.sh
+shellcheck scripts/install.sh
+```
+
+### When changing CLI TypeScript
+
+```bash
+cd cli && npm test
 ```
 
 ### When changing docker-compose.yml
@@ -201,7 +213,7 @@ shellcheck scripts/hermesclaw scripts/setup.sh scripts/start.sh scripts/status.s
 docker compose config   # validates and prints resolved config
 docker compose build    # builds the hermesclaw image
 docker compose up -d    # starts the stack
-./scripts/doctor.sh     # full check (no --quick)
+hermesclaw doctor       # full check (no --quick)
 docker compose down
 ```
 
@@ -210,21 +222,20 @@ docker compose down
 If you have NVIDIA hardware and OpenShell installed, run the full test:
 
 ```bash
-./scripts/setup.sh
-./scripts/start.sh
-./scripts/hermesclaw doctor
-./scripts/hermesclaw chat "hello, verify you can respond"
-./scripts/hermesclaw policy-set gateway
-./scripts/hermesclaw stop
+hermesclaw onboard
+hermesclaw doctor
+hermesclaw mybot chat "hello, verify you can respond"
+hermesclaw mybot policy add github
+hermesclaw mybot stop
 ```
 
-Include your `./scripts/doctor.sh` output in the PR body.
+Include your `hermesclaw doctor` output in the PR body.
 
 ### Regenerate test-results.md
 
-After any change to the test suite or feature status:
+After any change to the benchmark suite or feature status:
 ```bash
-./scripts/test.sh --quick
+bash benchmarks/compare-features.sh --quick
 git add docs/test-results.md
 ```
 
@@ -234,8 +245,8 @@ git add docs/test-results.md
 
 1. **Fork** the repo and create a branch from `main`
 2. **Make your changes** — one concern per PR
-3. **Run the tests** — `./scripts/doctor.sh --quick` and `./scripts/test.sh --quick`
-4. **Lint your scripts** — `shellcheck` on any modified `.sh` or `hermesclaw` files
+3. **Run the tests** — `cd cli && npm test` and `hermesclaw doctor --quick`
+4. **Lint your scripts** — `shellcheck` on any modified `.sh` files
 5. **Validate any YAML** — `python3 -c "import yaml; yaml.safe_load(open('your-file.yaml'))"`
 6. **Update docs** if your change adds or removes a feature — update `docs/features.md` and regenerate `docs/test-results.md`
 7. **Open the PR** using the PR template — fill in all sections
@@ -243,8 +254,8 @@ git add docs/test-results.md
 
 ### PR checklist (enforced by template)
 
-- [ ] `./scripts/doctor.sh --quick` passes with no new FAIL entries
-- [ ] `./scripts/test.sh --quick` runs to completion
+- [ ] `hermesclaw doctor --quick` passes with no new FAIL entries
+- [ ] `cd cli && npm test` passes
 - [ ] `shellcheck` passes on any modified shell scripts
 - [ ] All modified YAML files parse without errors
 - [ ] `docs/test-results.md` regenerated if feature coverage changed
@@ -290,7 +301,7 @@ git add docs/test-results.md
 - **Dockerfile changes that add root execution** — Hermes must run as an unprivileged user
 - **Breaking changes to the `hermesclaw` CLI** without a deprecation path — existing users depend on `hermesclaw start/stop/status/connect`
 - **Secret sprawl** — never add API keys, tokens, or credentials to any file that isn't in `.gitignore`
-- **Untested changes** — if you can't run `./scripts/doctor.sh --quick` successfully, we can't merge
+- **Untested changes** — if you can't run `hermesclaw doctor --quick` successfully, we can't merge
 - **Large scope creep** — HermesClaw is specifically Hermes + OpenShell. We won't merge general-purpose Hermes improvements unrelated to the sandbox
 
 ---

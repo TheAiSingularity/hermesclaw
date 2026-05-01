@@ -9,7 +9,35 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-*Changes staged for the next release go here.*
+### Changed
+
+- **CLI rewritten from bash to Node.js/TypeScript.** The bash CLI (`scripts/hermesclaw` + `scripts/lib/hermesclaw-helpers.sh`) is replaced by a `commander`-based CLI under `cli/`. Install with `npm install && npm run build && npm link` or via the updated `scripts/install.sh`.
+- **`scripts/install.sh` overhauled.** No longer pulls a prebuilt GHCR image or symlinks a bash script. Now installs Node.js (via nvm if missing), builds the CLI, runs `npm link`, and launches `hermesclaw onboard`.
+- **Interactive onboard wizard replaces manual setup.** `hermesclaw onboard` walks through provider selection (NVIDIA, OpenAI, Anthropic, Gemini, Ollama, or any OpenAI-compatible endpoint), model configuration, credential storage, policy tier selection, and sandbox creation in one flow. Replaces the old `scripts/setup.sh` + manual llama-server + docker-compose workflow.
+- **Policy model: composable presets + tiers.** Old monolithic presets (`strict`, `gateway`, `permissive`) are supplemented by composable presets (`openshell/presets/*.yaml`: npm, pypi, brave, huggingface, github, slack, discord, telegram) and tiers (`restricted`, `balanced`, `open`). Manage with `hermesclaw policy add/remove/list`.
+- **Dockerfile pinned to `nousresearch/hermes-agent:v2026.4.23`.** Added build ARGs for inference config (`HERMESCLAW_MODEL`, `HERMESCLAW_INFERENCE_BASE_URL`, `HERMESCLAW_INFERENCE_API`), pre-installs Hermes TUI dependencies, and patches inference config at container startup.
+- **`hermesclaw doctor` enhanced.** Now includes provider-aware inference health checks, Docker image inspection, config/model/memory/skill counts, policy YAML validation, and a chat smoke test. Added `--quick` flag to skip slow checks.
+- **Comparison scripts moved to `benchmarks/`.** `scripts/test.sh` → `benchmarks/compare-features.sh`, `scripts/test-setup.sh` → `benchmarks/compare-setup.sh`, `scripts/test-uc-*.sh` → `benchmarks/uc-*.sh`.
+- **`.env.example` clarified.** `CTX_SIZE` documented as llama-server only (ignored by Ollama). Context size notes updated.
+
+### Added
+
+- `cli/` — Node.js/TypeScript CLI (`commander`, `@inquirer/prompts`, `chalk`, `yaml`).
+- `openshell/baseline.yaml` — base sandbox policy (filesystem, process, inference).
+- `openshell/tiers.yaml` — tier definitions (restricted, balanced, open).
+- `openshell/presets/` — composable network presets (npm, pypi, brave, huggingface, github, slack, discord, telegram).
+- `.dockerignore` — reduces Docker build context.
+- `hermesclaw credentials` subcommand — manage stored API keys.
+
+### Removed
+
+- `scripts/hermesclaw` — replaced by Node.js CLI.
+- `scripts/lib/hermesclaw-helpers.sh` — replaced by `cli/src/lib/`.
+- `scripts/setup.sh` — replaced by `hermesclaw onboard`.
+- `scripts/start.sh` — replaced by `hermesclaw onboard` / sandbox commands.
+- `scripts/status.sh` — replaced by `hermesclaw status`.
+- `scripts/doctor.sh` — replaced by `hermesclaw doctor`.
+- `scripts/test-registry.sh`, `scripts/test-dispatch.sh`, `scripts/test-credentials.sh` — replaced by `cli/src/lib/*.test.ts` (vitest).
 
 ---
 
