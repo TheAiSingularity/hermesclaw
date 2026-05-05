@@ -92,7 +92,7 @@ Classic network firewalls (iptables / nftables) work at layer 3/4 — IP address
 - The proxy speaks OPA (Open Policy Agent) to evaluate each request against the active policy.
 - Rules are `(host, port, method, path-glob) → allow | deny`.
 - WebSocket connections use a `CONNECT` tunnel (`access: full`) with no L7 filtering — the proxy cannot inspect opaque bytes inside an upgraded connection.
-- Each policy binds to a **binary path** — only the `hermes` executable can use the rule, not an arbitrary `curl` or `wget` the agent might drop into `/tmp/`.
+- Each policy binds to a **binary path** — only the Hermes venv interpreter (`/opt/hermes/.venv/bin/python3`) can use the rule, not an arbitrary `curl` or `wget` the agent might drop into `/tmp/`.
 
 This layer is **hot-reloadable** — policy can change without restarting the agent.
 
@@ -133,7 +133,7 @@ filesystem_policy:
     - /sandbox/knowledge     # user docs (ro mount)
     - /sandbox/configs       # persona + config (ro mount)
   read_write:
-    - /opt/hermes-data       # memories, skills, auth
+    - /opt/data       # memories, skills, auth
     - /sandbox               # working dir
     - /tmp
 ```
@@ -176,10 +176,10 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/local/bin/hermes }
+      - { path: /opt/hermes/.venv/bin/python3 }
 ```
 
-- **Binary-bound:** each policy lists the executable (`/usr/local/bin/hermes`) that may use it. A `curl` dropped into `/tmp/` cannot use these rules.
+- **Binary-bound:** each policy lists the executable (`/opt/hermes/.venv/bin/python3`) that may use it. A `curl` dropped into `/tmp/` cannot use these rules.
 - **Method + path glob:** for example, the Telegram policy only allows `GET/POST` on `/bot*/**` — nothing else.
 - **`tls: terminate`:** the proxy terminates TLS, enabling L7 inspection.
 - **`access: full` for WebSockets:** Discord's gateway and Slack's Socket Mode bind as `access: full` because the proxy cannot filter post-upgrade WebSocket frames.
@@ -278,7 +278,7 @@ Changes to `openshell/*.yaml` are reviewed manually in PRs. There is no `hermesc
 
 ### 9. Memory volume is read-write for the agent
 
-`/opt/hermes-data` is read-write in all policies (memories, skills, auth). This is intentional — persistent memory is a feature — but it means a compromised agent can poison its own future sessions by editing `/opt/hermes-data/memories/MEMORY.md`. There is no write-ahead integrity check or append-only mode.
+`/opt/data` is read-write in all policies (memories, skills, auth). This is intentional — persistent memory is a feature — but it means a compromised agent can poison its own future sessions by editing `/opt/data/memories/MEMORY.md`. There is no write-ahead integrity check or append-only mode.
 
 ### 10. No per-skill policy scoping
 
@@ -335,7 +335,7 @@ Keep `best_effort` as the default for broad compatibility. Add a fourth preset f
 Explains policy YAML diffs in human terms: "This PR opens egress to `api.openai.com`. This PR widens the Telegram path glob from `/bot*/**` to `/*`." Run as a CI check on any PR touching `openshell/*.yaml`.
 
 **4. Document the NemoClaw blueprint provenance prominently.**
-The YAML comments already cite `nemoclaw-blueprint/policies/openclaw-sandbox.yaml`. Promote this to a table in the README: "HermesClaw policies are derived from NVIDIA's NemoClaw v0.1.0 reference blueprint. Divergences are intentional and listed below." Divergences so far: one (binary path is Python `hermes`, not Node `node`).
+The YAML comments already cite `nemoclaw-blueprint/policies/openclaw-sandbox.yaml`. Promote this to a table in the README: "HermesClaw policies are derived from NVIDIA's NemoClaw v0.1.0 reference blueprint. Divergences are intentional and listed below." Divergences so far: one (binary path is the Hermes venv interpreter `/opt/hermes/.venv/bin/python3`, not Node `/usr/local/bin/node`).
 
 **5. Audit log shipper.**
 Small sidecar (shell script ok) that tails OpenShell's audit log and forwards policy violations to a webhook. Ship it behind an env var `HERMESCLAW_AUDIT_WEBHOOK`.
@@ -343,7 +343,7 @@ Small sidecar (shell script ok) that tails OpenShell's audit log and forwards po
 ### Medium-term
 
 **6. Write-protected memory mode.**
-Optional policy flag that mounts `/opt/hermes-data/memories/` as append-only or read-only for a session. Agents that need to mutate memory can do so out-of-band via a human-approved step.
+Optional policy flag that mounts `/opt/data/memories/` as append-only or read-only for a session. Agents that need to mutate memory can do so out-of-band via a human-approved step.
 
 **7. Per-skill policy scoping.**
 A skill manifest could declare which network policies it requires; the CLI enforces that only those are active during its execution. Requires broader changes — effectively a capability system layered on top of policies.

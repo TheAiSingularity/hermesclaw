@@ -7,7 +7,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.4.0] — 2026-05-05
 
 ### Changed
 
@@ -226,7 +226,8 @@ Consolidated release covering all work between v0.2.0 and today. Supersedes the 
 - `scripts/status.sh` — quick status check
 - `assets/banner.png` — project banner
 
-[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/TheAiSingularity/hermesclaw/compare/v0.3.3...v0.3.4

@@ -530,6 +530,8 @@ async function runOnboard(opts: OnboardOptions): Promise<void> {
       process.exit(1);
     }
 
+    const hostTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
     const created = await createSandbox({
       name: sandboxName,
       policyFile: policyOutputPath,
@@ -542,6 +544,7 @@ async function runOnboard(opts: OnboardOptions): Promise<void> {
         HERMESCLAW_MODEL: model,
         HERMESCLAW_INFERENCE_BASE_URL: baseUrl || "https://inference.local/v1",
         HERMESCLAW_INFERENCE_API: apiPath,
+        HERMESCLAW_TZ: hostTimezone,
       },
     });
 

@@ -18,8 +18,10 @@
 # WARNING: Schema matches NVIDIA/NemoClaw v0.1.0 reference blueprint. Do not
 # change field names without verifying against
 # `~/.nemoclaw/source/nemoclaw-blueprint/policies/openclaw-sandbox.yaml`.
-# Endpoints are bound to `/usr/bin/python3*` (the actual Python interpreter
-# binary) instead of `/usr/local/bin/node` — Hermes is Python, not Node.js.
+# Endpoints are bound to `/opt/hermes/.venv/bin/python3` (the Hermes-specific
+# venv interpreter) instead of `/usr/local/bin/node` — Hermes is Python, not
+# Node.js. Using the venv path (not system-wide python3) preserves
+# binary-binding semantics: only the Hermes process can use these rules.
 #
 # Apply with:
 #   openshell policy set hermesclaw-1 --policy openshell/policy-permissive.yaml --wait
@@ -78,7 +80,7 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── Telegram Bot API ───────────────────────────────────────────────────
   telegram:
@@ -93,7 +95,7 @@ network_policies:
           - allow: { method: GET, path: "/bot*/**" }
           - allow: { method: POST, path: "/bot*/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── Discord ────────────────────────────────────────────────────────────
   discord:
@@ -128,7 +130,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── Slack ──────────────────────────────────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/slack.yaml. Task spec
@@ -169,7 +171,7 @@ network_policies:
         port: 443
         access: full
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── HuggingFace Hub / LFS / Inference ──────────────────────────────────
   # Modeled on nemoclaw-blueprint/policies/presets/huggingface.yaml.
@@ -192,7 +194,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── GitHub ─────────────────────────────────────────────────────────────
   # Read/write API + raw content fetch. Binary-bound to hermes so arbitrary
@@ -227,7 +229,7 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }
 
   # ── DuckDuckGo web search (GET only) ───────────────────────────────────
   # Read-only web search. No POST — prevents using DDG as an exfil sink.
@@ -249,4 +251,4 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }

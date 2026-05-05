@@ -7,6 +7,7 @@ ARG HERMES_VERSION="v2026.4.23"
 ARG HERMESCLAW_MODEL=""
 ARG HERMESCLAW_INFERENCE_BASE_URL="https://inference.local/v1"
 ARG HERMESCLAW_INFERENCE_API="openai-completions"
+ARG HERMESCLAW_TZ="UTC"
 
 USER root
 
@@ -18,6 +19,11 @@ RUN apt-get update && \
     groupadd -r sandbox && useradd -r -g sandbox -m -d /sandbox -s /bin/bash sandbox && \
     usermod -aG hermes sandbox 2>/dev/null || true && \
     chown -R sandbox:sandbox /sandbox
+
+# Configure timezone from host (defaults to UTC if not provided)
+RUN ln -sf "/usr/share/zoneinfo/${HERMESCLAW_TZ}" /etc/localtime && \
+    echo "${HERMESCLAW_TZ}" > /etc/timezone
+ENV TZ="${HERMESCLAW_TZ}"
 
 # Login-time init: lives in the image layer (/etc/profile.d/) so it
 # survives the VOLUME mount that replaces /sandbox/ at runtime.

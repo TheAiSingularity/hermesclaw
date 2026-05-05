@@ -6,7 +6,7 @@
   <a href="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml"><img src="https://github.com/TheAiSingularity/hermesclaw/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome"></a>
-  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.5.0-orange.svg" alt="Version"></a>
+  <a href="https://github.com/TheAiSingularity/hermesclaw/blob/main/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.4.0-orange.svg" alt="Version"></a>
 </p>
 
 **Hermes Agent (NousResearch) running inside NVIDIA OpenShell.**

@@ -1,6 +1,6 @@
 {
   "name": "hermesclaw",
-  "version": "0.0.50",
+  "version": "0.4.0",
   "description": "HermesClaw CLI — Hermes Agent in NVIDIA OpenShell",
   "type": "module",
   "bin": {
@@ -26,7 +26,7 @@
     "sandbox",
     "ai-agent"
   ],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
     "chalk": "^5.3.0",

@@ -78,4 +78,4 @@ network_policies:
         rules:
           - allow: { method: "*", path: "/**" }
     binaries:
-      - { path: /usr/bin/python3* }
+      - { path: /opt/hermes/.venv/bin/python3 }

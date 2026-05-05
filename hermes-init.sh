@@ -5,6 +5,7 @@
 export HERMES_HOME="/sandbox/.hermes"
 export HERMES_WEB_DIST="/opt/hermes/hermes_cli/web_dist"
 export PATH="/opt/hermes/.venv/bin:$PATH"
+export TZ="${TZ:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
 
 export NVM_DIR="/opt/nvm"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://inference.local/v1}"
@@ -30,7 +31,15 @@ OPENSHELL_CA="/etc/openshell-tls/openshell-ca.pem"
 if [ -f "$OPENSHELL_CA" ]; then
   git config --global http.sslCAInfo "$OPENSHELL_CA"
 fi
+[ -f "$DEFAULTS/mcp-urls.env" ] && . "$DEFAULTS/mcp-urls.env"
 if [ -n "${GITLAB_TOKEN:-}" ] && [ -n "${GITLAB_URL:-}" ]; then
   git config --global credential.helper \
     "!f() { echo username=oauth2; echo password=\$GITLAB_TOKEN; }; f"
 fi
+
+# API timeouts for local large-model inference (Nemotron 120B, 262K context).
+# Hermes reads .env as config but does not export to the process environment,
+# so sub-agents spawned by delegate_task inherit the default 300s timeout.
+# Exporting here ensures all child processes use the extended timeouts.
+export HERMES_API_TIMEOUT="${HERMES_API_TIMEOUT:-1800}"
+export HERMES_API_CALL_STALE_TIMEOUT="${HERMES_API_CALL_STALE_TIMEOUT:-900}"
